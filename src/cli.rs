@@ -1,4 +1,4 @@
-use clap::{Parser, Subcommand};
+use clap::{ArgGroup, Parser, Subcommand};
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -18,7 +18,7 @@ pub enum Command {
     Serve(ServeArgs),
     /// Bridge Virtuoso ipcWriteProcess output to the callback socket
     Forward(ForwardArgs),
-    /// Send a SKILL expression to a running bridge server
+    /// Send a SKILL expression or file to a running bridge server
     Send(SendArgs),
 }
 
@@ -36,7 +36,7 @@ pub struct ServeArgs {
     #[arg(long)]
     pub cb_token: String,
 
-    /// Shared secret for `via send` client authentication (empty = no auth)
+    /// Shared secret for client authentication (omit to disable auth)
     #[arg(long, default_value = "")]
     pub secret: String,
 
@@ -61,6 +61,11 @@ pub struct ForwardArgs {
 }
 
 #[derive(clap::Args, Debug)]
+#[command(group(
+    ArgGroup::new("input")
+        .required(true)
+        .args(["eval", "load"])
+))]
 pub struct SendArgs {
     /// Target bridge server socket path
     #[arg(long, default_value_t = default_sock())]
@@ -72,7 +77,11 @@ pub struct SendArgs {
 
     /// SKILL expression to evaluate
     #[arg(long)]
-    pub expr: String,
+    pub eval: Option<String>,
+
+    /// Load and execute a SKILL file (equivalent to load("path"))
+    #[arg(long)]
+    pub load: Option<PathBuf>,
 
     /// Fire-and-forget: do not wait for a result
     #[arg(long = "async")]

@@ -10,7 +10,7 @@
 ///       ▼
 ///   router_task  ── stdout ──► Virtuoso (one expression at a time, serial)
 ///       ▲
-///       │  mpsc  Result<Value, String>
+///       │  mpsc  Result<EvalResult, String>
 ///   cb_reader_task
 ///       ▲
 ///   callback Unix socket  ◄── via forward ◄── Virtuoso ipcWriteProcess
@@ -20,7 +20,6 @@
 use anyhow::{Context, Result};
 use bytes::Bytes;
 use futures_util::{SinkExt, StreamExt};
-use serde_json::Value;
 use std::collections::VecDeque;
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -32,11 +31,11 @@ use tracing::{debug, error, info, warn};
 
 use crate::cli::ServeArgs;
 use crate::codec;
-use crate::proto::{EvalRequest, EvalResponse, Outcome};
+use crate::proto::{EvalRequest, EvalResponse, EvalResult};
 
 // ── types ─────────────────────────────────────────────────────────────────────
 
-type ReplyTx = oneshot::Sender<Result<Value, String>>;
+type ReplyTx = oneshot::Sender<Result<EvalResult, String>>;
 type ClientWriter = FramedWrite<OwnedWriteHalf, LengthDelimitedCodec>;
 
 struct PendingReq {
@@ -57,7 +56,7 @@ pub async fn run(args: ServeArgs) -> Result<()> {
 
     // ── channels ──────────────────────────────────────────────────────────────
     let (req_tx, req_rx) = mpsc::channel::<PendingReq>(256);
-    let (cb_tx, cb_rx) = mpsc::channel::<Result<Value, String>>(256);
+    let (cb_tx, cb_rx) = mpsc::channel::<Result<EvalResult, String>>(256);
 
     // ── callback socket (serve binds; forward connects) ───────────────────────
     remove_if_exists(&args.cb_sock)?;
@@ -72,14 +71,37 @@ pub async fn run(args: ServeArgs) -> Result<()> {
     info!("[si-view] client socket: {}", args.sock);
 
     // ── background tasks ──────────────────────────────────────────────────────
-    tokio::spawn(router_task(req_rx, cb_rx));
-    tokio::spawn(cb_accept_task(cb_listener, args.cb_token.clone(), cb_tx));
+    let router_handle = tokio::spawn(router_task(req_rx, cb_rx));
+    let cb_handle = tokio::spawn(cb_accept_task(cb_listener, args.cb_token.clone(), cb_tx));
+
+    // Monitor critical tasks — log if either exits or panics.
+    tokio::spawn(async move {
+        tokio::select! {
+            r = router_handle => {
+                match r {
+                    Ok(()) => error!("[si-view] router task exited unexpectedly"),
+                    Err(e) => error!("[si-view] router task panicked: {e}"),
+                }
+            }
+            r = cb_handle => {
+                match r {
+                    Ok(()) => error!("[si-view] cb_accept task exited unexpectedly"),
+                    Err(e) => error!("[si-view] cb_accept task panicked: {e}"),
+                }
+            }
+        }
+    });
 
     // ── accept loop ───────────────────────────────────────────────────────────
     loop {
         match listener.accept().await {
             Ok((stream, _)) => {
-                tokio::spawn(handle_client(stream, req_tx.clone(), secret.clone()));
+                let h = tokio::spawn(handle_client(stream, req_tx.clone(), secret.clone()));
+                tokio::spawn(async move {
+                    if let Err(e) = h.await {
+                        error!("[si-view] client handler panicked: {e}");
+                    }
+                });
             }
             Err(e) => error!("[si-view] accept: {e}"),
         }
@@ -95,7 +117,7 @@ pub async fn run(args: ServeArgs) -> Result<()> {
 /// the current one has arrived.
 async fn router_task(
     mut req_rx: mpsc::Receiver<PendingReq>,
-    mut cb_rx: mpsc::Receiver<Result<Value, String>>,
+    mut cb_rx: mpsc::Receiver<Result<EvalResult, String>>,
 ) {
     let mut queue: VecDeque<PendingReq> = VecDeque::new();
     let mut in_flight: Option<(String, Option<ReplyTx>)> = None;
@@ -145,7 +167,7 @@ async fn router_task(
 async fn cb_accept_task(
     listener: UnixListener,
     token: String,
-    cb_tx: mpsc::Sender<Result<Value, String>>,
+    cb_tx: mpsc::Sender<Result<EvalResult, String>>,
 ) {
     loop {
         match listener.accept().await {
@@ -166,7 +188,7 @@ async fn cb_accept_task(
 async fn cb_reader_task(
     stream: UnixStream,
     token: String,
-    cb_tx: mpsc::Sender<Result<Value, String>>,
+    cb_tx: mpsc::Sender<Result<EvalResult, String>>,
 ) {
     let prefix = format!("{token} ");
     let mut lines = BufReader::new(stream).lines();
@@ -181,7 +203,7 @@ async fn cb_reader_task(
         };
 
         if let Some(json) = rest.strip_prefix("S:") {
-            let val = serde_json::from_str::<Value>(json)
+            let val = serde_json::from_str::<EvalResult>(json)
                 .map_err(|e| format!("JSON parse: {e}"));
             let _ = cb_tx.send(val).await;
         } else if let Some(err) = rest.strip_prefix("F:") {
@@ -228,16 +250,7 @@ async fn handle_client(
         // ── authentication ────────────────────────────────────────────────────
         if !secret.is_empty() && req.secret != *secret {
             warn!("[si-view] rejected id={} (bad secret)", req.id);
-            reply(
-                &mut writer,
-                EvalResponse {
-                    id: req.id,
-                    outcome: Outcome::Failure {
-                        error: "authentication failed".into(),
-                    },
-                },
-            )
-            .await;
+            reply(&mut writer, EvalResponse::failure(req.id, "authentication failed".into())).await;
             break;
         }
 
@@ -265,15 +278,15 @@ async fn handle_client(
 
         // ── wait for result (sync mode) ───────────────────────────────────────
         if let Some(rx) = reply_rx {
-            let outcome = match rx.await {
-                Ok(Ok(val)) => Outcome::Success { result: val },
-                Ok(Err(err)) => Outcome::Failure { error: err },
+            let resp = match rx.await {
+                Ok(Ok(result)) => EvalResponse::success(id, result),
+                Ok(Err(err))   => EvalResponse::failure(id, err),
                 Err(_) => {
                     error!("[si-view] reply channel dropped");
                     break;
                 }
             };
-            reply(&mut writer, EvalResponse { id, outcome }).await;
+            reply(&mut writer, resp).await;
         }
     }
 }

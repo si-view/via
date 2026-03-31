@@ -7,15 +7,20 @@ use uuid::Uuid;
 
 use crate::cli::SendArgs;
 use crate::codec;
-use crate::proto::{EvalRequest, EvalResponse, Outcome};
+use crate::proto::{EvalRequest, EvalResponse};
 
 /// Connect to a running `via serve`, send one SKILL expression, and:
 ///   - (default) block until the result arrives, then print JSON to stdout.
 ///   - (--async)  fire-and-forget; exit immediately after sending.
 ///
-/// Exit code 0  → success (result printed to stdout)
-/// Exit code 1  → SKILL evaluation failure or transport error (message to stderr)
+/// Output format (stdout, success):
+///   {"id":"…","ok":true,"type":"<skill-type>","value":…}
+///
+/// Exit code 0  → ok:true
+/// Exit code 1  → ok:false or transport error (message to stderr)
 pub async fn run(args: SendArgs) -> Result<()> {
+    let expression = build_expression(&args)?;
+
     let stream = UnixStream::connect(&args.sock)
         .await
         .map_err(|e| anyhow!("connect {}: {e}", args.sock))?;
@@ -28,7 +33,7 @@ pub async fn run(args: SendArgs) -> Result<()> {
     let req = EvalRequest {
         id: id.clone(),
         secret: args.secret,
-        expression: args.expr,
+        expression,
         no_reply: args.no_wait,
     };
 
@@ -38,7 +43,6 @@ pub async fn run(args: SendArgs) -> Result<()> {
         .map_err(|e| anyhow!("send request: {e}"))?;
 
     if args.no_wait {
-        // Fire-and-forget: SinkExt::send already flushed.
         return Ok(());
     }
 
@@ -46,15 +50,30 @@ pub async fn run(args: SendArgs) -> Result<()> {
         Some(Ok(frame)) => {
             let resp: EvalResponse = serde_json::from_slice(&frame)
                 .map_err(|e| anyhow!("decode response: {e}"))?;
-            match resp.outcome {
-                Outcome::Success { result } => {
-                    println!("{}", serde_json::to_string_pretty(&result)?);
-                    Ok(())
-                }
-                Outcome::Failure { error } => Err(anyhow!("{error}")),
+            println!("{}", serde_json::to_string_pretty(&resp)?);
+            if resp.ok {
+                Ok(())
+            } else {
+                let reason = resp.result.reason.unwrap_or_else(|| "unknown error".into());
+                Err(anyhow!("{reason}"))
             }
         }
         Some(Err(e)) => Err(anyhow!("frame error: {e}")),
         None => Err(anyhow!("connection closed before response")),
     }
+}
+
+/// Build the SKILL expression string from --eval or --load.
+fn build_expression(args: &SendArgs) -> Result<String> {
+    if let Some(expr) = &args.eval {
+        return Ok(expr.clone());
+    }
+    if let Some(path) = &args.load {
+        let p = path.to_string_lossy();
+        // Escape backslashes and double-quotes for a SKILL string literal.
+        let escaped = p.replace('\\', "\\\\").replace('"', "\\\"");
+        return Ok(format!("load(\"{escaped}\")"));
+    }
+    // clap ArgGroup guarantees at least one is set; this is unreachable.
+    Err(anyhow!("one of --eval or --load is required"))
 }

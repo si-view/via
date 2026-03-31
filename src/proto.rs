@@ -15,17 +15,50 @@ pub struct EvalRequest {
     pub no_reply: bool,
 }
 
-/// `via serve` → `via send`: result of evaluation.
+/// Unified result payload — carried in both the `S:` callback line and the
+/// final `EvalResponse` sent back to `via send`.
+///
+/// | field   | meaning                                                        |
+/// |---------|----------------------------------------------------------------|
+/// | data    | JSON-serialised SKILL value; `null` on failure                 |
+/// | reason  | error description; `Some` → failure, `None` → success         |
+/// | is_ref  | `true` when `data` is a remote-object stub `{id, kind}`       |
+/// | code    | reserved for future result subtypes (0 = normal result)       |
+#[derive(Debug, Serialize, Deserialize)]
+pub struct EvalResult {
+    pub data: Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    pub is_ref: bool,
+    pub code: i64,
+}
+
+/// `via serve` → `via send`: response envelope.
+///
+/// Success: `{"id":"…","ok":true, "data":…,"is_ref":false,"code":0}`
+/// Failure: `{"id":"…","ok":false,"data":null,"reason":"…","is_ref":false,"code":0}`
 #[derive(Debug, Serialize, Deserialize)]
 pub struct EvalResponse {
     pub id: String,
+    pub ok: bool,
     #[serde(flatten)]
-    pub outcome: Outcome,
+    pub result: EvalResult,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(tag = "status", rename_all = "lowercase")]
-pub enum Outcome {
-    Success { result: Value },
-    Failure { error: String },
+impl EvalResponse {
+    pub fn success(id: String, result: EvalResult) -> Self {
+        Self { id, ok: true, result }
+    }
+    pub fn failure(id: String, reason: String) -> Self {
+        Self {
+            id,
+            ok: false,
+            result: EvalResult {
+                data: Value::Null,
+                reason: Some(reason),
+                is_ref: false,
+                code: 0,
+            },
+        }
+    }
 }
