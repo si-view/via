@@ -112,9 +112,9 @@ pub struct StartArgs {
     #[arg(long, default_value = "virtuoso")]
     pub virtuoso: String,
 
-    /// Path to via.il (default: same directory as this binary)
+    /// Run Virtuoso without a GUI (passes -nograph)
     #[arg(long)]
-    pub via_il: Option<PathBuf>,
+    pub nograph: bool,
 }
 
 #[derive(clap::Args, Debug)]

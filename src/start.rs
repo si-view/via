@@ -7,13 +7,16 @@ use uuid::Uuid;
 use crate::cli::StartArgs;
 use crate::process::{now_string, process_alive, Instance, Registry};
 
+/// via.il content embedded at compile time — no runtime file lookup needed.
+const VIA_IL: &str = include_str!("../via.il");
+
 pub fn run(args: StartArgs) -> Result<()> {
     // ── 1. Require DISPLAY ────────────────────────────────────────────────────
     if std::env::var("DISPLAY").is_err() {
         bail!("DISPLAY environment variable is not set; Virtuoso requires a display");
     }
 
-    // ── 2. Validate name ──────────────────────────────────────────────────────
+    // ── 2. Validate name and check registry ───────────────────────────────────
     validate_name(&args.name)?;
 
     let mut registry = Registry::load()?;
@@ -25,7 +28,7 @@ pub fn run(args: StartArgs) -> Result<()> {
                 existing.virtuoso_pid
             );
         }
-        // Stale entry from a previously dead process — remove it and continue.
+        // Stale entry from a previously dead process — reclaim the name.
         registry.instances.remove(&args.name);
     }
 
@@ -48,42 +51,15 @@ pub fn run(args: StartArgs) -> Result<()> {
     let via_log = log_dir.join(format!("{}-via.log", args.name));
     let il_file = tmp_dir.join(format!("{}-restore.il", args.name));
 
-    // ── 4. Locate via binary and via.il ───────────────────────────────────────
+    // ── 4. Locate the via binary ──────────────────────────────────────────────
     let binary_path = std::env::current_exe().context("locate via binary")?;
 
-    let via_il_path = match args.via_il {
-        Some(p) => p,
-        None => {
-            let candidate = binary_path
-                .parent()
-                .unwrap_or_else(|| std::path::Path::new("."))
-                .join("via.il");
-            if !candidate.exists() {
-                bail!(
-                    "via.il not found at {}; use --via-il to specify its path",
-                    candidate.display()
-                );
-            }
-            candidate
-        }
-    };
-
     // ── 5. Generate shared secret ─────────────────────────────────────────────
-    // Two UUIDs (no hyphens) = 64-char hex string.
-    let secret = format!(
-        "{}{}",
-        Uuid::new_v4().simple(),
-        Uuid::new_v4().simple()
-    );
+    // Two UUID v4s without hyphens → 64-char hex string.
+    let secret = format!("{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple());
 
-    // ── 6. Write IL restore file ──────────────────────────────────────────────
-    let il_content = build_il(
-        &via_il_path,
-        &binary_path,
-        &sock,
-        &secret,
-        &via_log,
-    );
+    // ── 6. Write self-deleting IL restore file ────────────────────────────────
+    let il_content = build_il(&il_file, &binary_path, &sock, &secret, &via_log);
     std::fs::write(&il_file, &il_content)
         .with_context(|| format!("write IL restore file {}", il_file.display()))?;
 
@@ -93,22 +69,23 @@ pub fn run(args: StartArgs) -> Result<()> {
     let virtuoso_stderr = virtuoso_stdout.try_clone()?;
 
     let mut cmd = Command::new(&args.virtuoso);
-    cmd.args(["-nograph", "-restore"])
-        .arg(&il_file)
-        .current_dir(&workspace)
+    cmd.arg("-restore")
+        .arg(&il_file);
+    if args.nograph {
+        cmd.arg("-nograph");
+    }
+    cmd.current_dir(&workspace)
         .stdin(Stdio::null())
         .stdout(Stdio::from(virtuoso_stdout))
         .stderr(Stdio::from(virtuoso_stderr))
-        // Put the child in its own process group so it outlives our process.
+        // New process group — child outlives the via process.
         .process_group(0);
 
     let child = cmd
         .spawn()
         .with_context(|| format!("spawn virtuoso binary '{}'", args.virtuoso))?;
     let pid = child.id();
-    // Intentionally drop the Child handle without waiting — the process runs
-    // in the background.  Dropping without wait() on Unix does not kill the
-    // child; it merely leaks the wait-slot until init reaps it.
+    // Drop without wait() — on Unix this does not kill the child.
     drop(child);
 
     // ── 8. Persist registry entry ─────────────────────────────────────────────
@@ -138,7 +115,6 @@ pub fn run(args: StartArgs) -> Result<()> {
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
-/// Only allow names that are safe to embed in file paths and socket paths.
 fn validate_name(name: &str) -> Result<()> {
     if name.is_empty() {
         bail!("--name must not be empty");
@@ -167,26 +143,39 @@ fn escape_il(s: &str) -> String {
     out
 }
 
-/// Generate the SKILL restore file that loads via.il and calls si_view_start.
+/// Build the self-deleting IL restore file.
+///
+/// The file:
+///   1. Defines all `via.il` procedures (inlined from the compile-time embed).
+///   2. Calls `si_view_start()` to launch `via serve` + `via forward`.
+///   3. Deletes itself with `deleteFile()` so no credentials linger on disk.
 fn build_il(
-    via_il: &PathBuf,
+    il_file: &PathBuf,
     binary: &PathBuf,
     sock: &PathBuf,
     secret: &str,
     via_log: &PathBuf,
 ) -> String {
     format!(
-        r#"load("{via_il}")
+        r#";;; Auto-generated by `via start` — do not edit.
+;;; This file deletes itself after Virtuoso loads it.
+
+{via_il}
+
 si_view_start("{binary}"
-  ?sock    "{sock}"
-  ?secret  "{secret}"
+  ?sock     "{sock}"
+  ?secret   "{secret}"
   ?log_file "{via_log}"
 )
+
+;;; Self-delete: remove this restore file so the secret does not linger.
+deleteFile("{il_file}")
 "#,
-        via_il = escape_il(&via_il.to_string_lossy()),
+        via_il = VIA_IL,
         binary = escape_il(&binary.to_string_lossy()),
         sock = escape_il(&sock.to_string_lossy()),
         secret = escape_il(secret),
         via_log = escape_il(&via_log.to_string_lossy()),
+        il_file = escape_il(&il_file.to_string_lossy()),
     )
 }

@@ -36,8 +36,6 @@ async fn run() -> Result<()> {
         cli::Command::List(args) => tokio::task::spawn_blocking(|| list::run(args))
             .await
             .unwrap(),
-        cli::Command::Kill(args) => tokio::task::spawn_blocking(|| kill::run(args))
-            .await
-            .unwrap(),
+        cli::Command::Kill(args) => kill::run(args).await,
     }
 }
