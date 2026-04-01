@@ -44,7 +44,7 @@ pub fn run(args: ListArgs) -> Result<()> {
             pid_w = pid_w,
         );
 
-        if args.prune && !alive {
+        if (args.prune || args.dry_run) && !alive {
             dead_names.push(name.to_string());
         }
     }
@@ -61,11 +61,22 @@ pub fn run(args: ListArgs) -> Result<()> {
     }
 
     if !dead_names.is_empty() {
-        for name in &dead_names {
-            registry.instances.remove(name);
+        if args.dry_run {
+            println!(
+                "\n[dry-run] would prune {} dead entr{}",
+                dead_names.len(),
+                if dead_names.len() == 1 { "y" } else { "ies" }
+            );
+            for name in &dead_names {
+                println!("[dry-run]   - {name}");
+            }
+        } else if args.prune {
+            for name in &dead_names {
+                registry.instances.remove(name);
+            }
+            registry.save()?;
+            println!("\npruned {} dead entr{}", dead_names.len(), if dead_names.len() == 1 { "y" } else { "ies" });
         }
-        registry.save()?;
-        println!("\npruned {} dead entr{}", dead_names.len(), if dead_names.len() == 1 { "y" } else { "ies" });
     }
 
     Ok(())

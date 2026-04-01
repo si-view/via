@@ -96,6 +96,10 @@ pub struct SendArgs {
     /// Fire-and-forget: do not wait for a result
     #[arg(long = "async")]
     pub no_wait: bool,
+
+    /// Print what would be sent without connecting to the bridge
+    #[arg(long)]
+    pub dry_run: bool,
 }
 
 #[derive(clap::Args, Debug)]
@@ -115,6 +119,10 @@ pub struct StartArgs {
     /// Run Virtuoso without a GUI (passes -nograph)
     #[arg(long)]
     pub nograph: bool,
+
+    /// Print what would happen without writing files or spawning Virtuoso
+    #[arg(long)]
+    pub dry_run: bool,
 }
 
 #[derive(clap::Args, Debug)]
@@ -122,6 +130,10 @@ pub struct ListArgs {
     /// Remove dead entries from the registry
     #[arg(long)]
     pub prune: bool,
+
+    /// Print what would be pruned without modifying the registry
+    #[arg(long)]
+    pub dry_run: bool,
 }
 
 #[derive(clap::Args, Debug)]
@@ -132,6 +144,10 @@ pub struct KillArgs {
     /// Send SIGKILL instead of SIGTERM
     #[arg(long)]
     pub force: bool,
+
+    /// Print what would happen without sending any signal or modifying the registry
+    #[arg(long)]
+    pub dry_run: bool,
 }
 
 fn default_sock() -> String {

@@ -26,6 +26,14 @@ pub async fn run(args: SendArgs) -> Result<()> {
     let (sock, secret) = resolve_target(&args)?;
     let expression = build_expression(&args)?;
 
+    if args.dry_run {
+        println!("[dry-run] target  : {sock}");
+        println!("[dry-run] auth    : {}", if secret.is_empty() { "(none)" } else { "(secret set)" });
+        println!("[dry-run] expr    : {expression}");
+        println!("[dry-run] mode    : {}", if args.no_wait { "fire-and-forget" } else { "sync" });
+        return Ok(());
+    }
+
     let stream = UnixStream::connect(&sock)
         .await
         .map_err(|e| anyhow!("connect {}: {e}", sock))?;

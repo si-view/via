@@ -25,21 +25,44 @@ pub async fn run(args: KillArgs) -> Result<()> {
         .ok_or_else(|| anyhow::anyhow!("no instance named '{}'", args.name))?
         .clone();
 
+    // ── Process already dead ──────────────────────────────────────────────────
     if !process_alive(inst.virtuoso_pid) {
         eprintln!(
             "warning: process {} is already dead; removing registry entry",
             inst.virtuoso_pid
         );
-        registry.instances.remove(&args.name);
-        registry.save()?;
-        cleanup_sock(&inst.sock);
+        if args.dry_run {
+            println!("[dry-run] would remove registry entry '{}'", args.name);
+            println!("[dry-run] would remove socket {}", inst.sock.display());
+        } else {
+            registry.instances.remove(&args.name);
+            registry.save()?;
+            cleanup_sock(&inst.sock);
+        }
         return Ok(());
     }
 
+    // ── Dry-run preview ───────────────────────────────────────────────────────
+    if args.dry_run {
+        let action = if args.force {
+            format!("SIGKILL pid {}", inst.virtuoso_pid)
+        } else {
+            format!(
+                "send exit() via {}  (wait up to {}s, SIGTERM fallback)",
+                inst.sock.display(),
+                GRACEFUL_TIMEOUT_SECS
+            )
+        };
+        println!("[dry-run] would: {action}");
+        println!("[dry-run] would remove registry entry '{}'", args.name);
+        println!("[dry-run] would remove socket {}", inst.sock.display());
+        return Ok(());
+    }
+
+    // ── Actual kill ───────────────────────────────────────────────────────────
     if args.force {
         // Bypass the bridge entirely — SIGKILL, no questions asked.
-        let ret =
-            unsafe { libc::kill(inst.virtuoso_pid as libc::pid_t, libc::SIGKILL) };
+        let ret = unsafe { libc::kill(inst.virtuoso_pid as libc::pid_t, libc::SIGKILL) };
         if ret != 0 {
             bail!(
                 "SIGKILL {} failed: {}",
@@ -58,7 +81,7 @@ pub async fn run(args: KillArgs) -> Result<()> {
         match graceful_exit(&sock, &inst.secret).await {
             Ok(()) => {
                 println!(
-                    "sent exit() to '{}' (pid {}), waiting for shutdown…",
+                    "sent exit() to '{}' (pid {}), waiting for shutdown...",
                     inst.name, inst.virtuoso_pid
                 );
             }
@@ -74,8 +97,8 @@ pub async fn run(args: KillArgs) -> Result<()> {
         }
 
         // 2. Poll until the process is gone or the timeout expires.
-        let deadline = std::time::Instant::now()
-            + std::time::Duration::from_secs(GRACEFUL_TIMEOUT_SECS);
+        let deadline =
+            std::time::Instant::now() + std::time::Duration::from_secs(GRACEFUL_TIMEOUT_SECS);
         loop {
             if !process_alive(inst.virtuoso_pid) {
                 break;
@@ -84,10 +107,7 @@ pub async fn run(args: KillArgs) -> Result<()> {
                 eprintln!(
                     "warning: '{}' (pid {}) did not exit within {}s; \
                      use `via kill --force {}` to send SIGKILL",
-                    inst.name,
-                    inst.virtuoso_pid,
-                    GRACEFUL_TIMEOUT_SECS,
-                    inst.name,
+                    inst.name, inst.virtuoso_pid, GRACEFUL_TIMEOUT_SECS, inst.name,
                 );
                 // Leave registry entry intact so the user can --force later.
                 return Ok(());
@@ -100,8 +120,6 @@ pub async fn run(args: KillArgs) -> Result<()> {
 
     registry.instances.remove(&args.name);
     registry.save()?;
-
-    // Clean up the socket file left behind by via serve.
     cleanup_sock(&inst.sock);
 
     Ok(())
@@ -115,6 +133,8 @@ fn cleanup_sock(sock: &std::path::Path) {
         }
     }
 }
+
+/// Connect to the bridge socket and send `exit()` as a fire-and-forget request.
 async fn graceful_exit(sock: &str, secret: &str) -> Result<()> {
     let stream = UnixStream::connect(sock).await?;
     let (_rd, wr) = stream.into_split();

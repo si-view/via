@@ -66,6 +66,16 @@ pub fn run(args: StartArgs) -> Result<()> {
     let il_file = tmp_dir.join(format!("{il_stem}.il"));
 
     // ── 6. Write compiled context and bootstrap IL ────────────────────────────
+    if args.dry_run {
+        println!("[dry-run] instance name : {}", args.name);
+        println!("[dry-run] workspace     : {}", workspace.display());
+        println!("[dry-run] sock          : {}", sock.display());
+        println!("[dry-run] virtuoso log  : {}", virtuoso_log.display());
+        println!("[dry-run] via log       : {}", via_log.display());
+        println!("[dry-run] virtuoso      : {}{}", args.virtuoso, if args.nograph { " -nograph" } else { "" });
+        return Ok(());
+    }
+
     std::fs::write(&cxt_file, VIA_CXT)
         .with_context(|| format!("write context file {}", cxt_file.display()))?;
 
