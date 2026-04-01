@@ -62,24 +62,40 @@ pub fn run(args: StartArgs) -> Result<()> {
     let cxt_stem = Uuid::new_v4().simple().to_string();
     let il_stem = Uuid::new_v4().simple().to_string();
 
-    let cxt_file = cxt_dir.join(&cxt_stem);          // no extension — Cadence convention
+    let cxt_file = cxt_dir.join(&cxt_stem); // no extension — Cadence convention
     let il_file = tmp_dir.join(format!("{il_stem}.il"));
+    let secret_file = tmp_dir.join(format!("{il_stem}.secret"));
 
-    // ── 6. Write compiled context and bootstrap IL ────────────────────────────
+    // ── 6. Write compiled context, secret file, and bootstrap IL ─────────────
     if args.dry_run {
         println!("[dry-run] instance name : {}", args.name);
         println!("[dry-run] workspace     : {}", workspace.display());
         println!("[dry-run] sock          : {}", sock.display());
         println!("[dry-run] virtuoso log  : {}", virtuoso_log.display());
         println!("[dry-run] via log       : {}", via_log.display());
-        println!("[dry-run] virtuoso      : {}{}", args.virtuoso, if args.nograph { " -nograph" } else { "" });
+        println!(
+            "[dry-run] virtuoso      : {}{}",
+            args.virtuoso,
+            if args.nograph { " -nograph" } else { "" }
+        );
         return Ok(());
     }
 
     std::fs::write(&cxt_file, VIA_CXT)
         .with_context(|| format!("write context file {}", cxt_file.display()))?;
 
-    let il_content = build_il(&cxt_file, &il_file, &binary_path, &sock, &secret, &via_log);
+    // Write secret to its own file; via serve reads and deletes it on startup.
+    std::fs::write(&secret_file, &secret)
+        .with_context(|| format!("write secret file {}", secret_file.display()))?;
+
+    let il_content = build_il(
+        &cxt_file,
+        &il_file,
+        &secret_file,
+        &binary_path,
+        &sock,
+        &via_log,
+    );
     std::fs::write(&il_file, &il_content)
         .with_context(|| format!("write IL bootstrap {}", il_file.display()))?;
 
@@ -89,8 +105,7 @@ pub fn run(args: StartArgs) -> Result<()> {
     let virtuoso_stderr = virtuoso_stdout.try_clone()?;
 
     let mut cmd = Command::new(&args.virtuoso);
-    cmd.arg("-restore")
-        .arg(&il_file);
+    cmd.arg("-restore").arg(&il_file);
     if args.nograph {
         cmd.arg("-nograph");
     }
@@ -171,26 +186,26 @@ fn escape_il(s: &str) -> String {
 fn build_il(
     cxt_file: &PathBuf,
     il_file: &PathBuf,
+    secret_file: &PathBuf,
     binary: &PathBuf,
     sock: &PathBuf,
-    secret: &str,
     via_log: &PathBuf,
 ) -> String {
     format!(
         r#"loadContext("{cxt}")
 si_view_start("{binary}"
-  ?sock     "{sock}"
-  ?secret   "{secret}"
-  ?log_file "{via_log}"
+  ?sock        "{sock}"
+  ?secret_file "{secret_file}"
+  ?log_file    "{via_log}"
 )
 deleteFile("{cxt}")
 deleteFile("{il}")
 "#,
-        cxt    = escape_il(&cxt_file.to_string_lossy()),
+        cxt = escape_il(&cxt_file.to_string_lossy()),
         binary = escape_il(&binary.to_string_lossy()),
-        sock   = escape_il(&sock.to_string_lossy()),
-        secret = escape_il(secret),
+        sock = escape_il(&sock.to_string_lossy()),
+        secret_file = escape_il(&secret_file.to_string_lossy()),
         via_log = escape_il(&via_log.to_string_lossy()),
-        il     = escape_il(&il_file.to_string_lossy()),
+        il = escape_il(&il_file.to_string_lossy()),
     )
 }

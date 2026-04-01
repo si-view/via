@@ -52,7 +52,7 @@ pub async fn run(args: ServeArgs) -> Result<()> {
     // through the router (SKILL expressions only).
     let _guard = crate::log::init_file(&args.log_file)?;
 
-    let secret = Arc::new(args.secret.clone());
+    let secret = Arc::new(resolve_secret(&args)?);
 
     // ── channels ──────────────────────────────────────────────────────────────
     let (req_tx, req_rx) = mpsc::channel::<PendingReq>(256);
@@ -310,4 +310,20 @@ fn remove_if_exists(path: &str) -> Result<()> {
         std::fs::remove_file(p).with_context(|| format!("remove {path}"))?;
     }
     Ok(())
+}
+
+/// Resolve the shared secret from either `--secret-file` (preferred) or
+/// `--secret` (fallback).  When a file is used it is deleted immediately
+/// after being read so the secret does not linger on disk.
+fn resolve_secret(args: &crate::cli::ServeArgs) -> Result<String> {
+    if let Some(path) = &args.secret_file {
+        let secret = std::fs::read_to_string(path)
+            .with_context(|| format!("read secret file {}", path.display()))?;
+        // Delete immediately — the value is now only in memory.
+        std::fs::remove_file(path)
+            .with_context(|| format!("delete secret file {}", path.display()))?;
+        Ok(secret.trim_end_matches('\n').to_owned())
+    } else {
+        Ok(args.secret.clone())
+    }
 }

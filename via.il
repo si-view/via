@@ -48,9 +48,9 @@ _via_remote_tbl  = makeTable("_via_remote" nil) ; id → opaque object
 ;;;                (omit or pass "" to disable authentication)
 procedure(si_view_start(binary_path
     @key
-    (sock      sprintf(nil "/tmp/via-%s.sock" getShellEnvVar("USER")))
-    (secret    "")
-    (log_file  "via.log"))
+    (sock        sprintf(nil "/tmp/via-%s.sock" getShellEnvVar("USER")))
+    (secret_file "")
+    (log_file    "via.log"))
 
   let((vpid cb_token cb_sock serve_cmd serve_pid fwd_cmd bridge_pid)
 
@@ -59,12 +59,12 @@ procedure(si_view_start(binary_path
     cb_sock  = sprintf(nil "/tmp/via-cb-%d.sock" vpid)
 
     ;;; ── serve process ─────────────────────────────────────────────────────────
-    ;;; Only pass --secret when a non-empty secret is configured, so that the
-    ;;; binary receives a well-formed argument list in both cases.
-    if(secret != "" then
+    ;;; Pass --secret-file so the secret value never appears in the process list.
+    ;;; via serve reads the file and deletes it immediately on startup.
+    if(secret_file != "" then
       serve_cmd = sprintf(nil
-        "%s serve --sock %s --cb-sock %s --cb-token %s --secret %s --log-file %s"
-        binary_path sock cb_sock cb_token secret log_file)
+        "%s serve --sock %s --cb-sock %s --cb-token %s --secret-file %s --log-file %s"
+        binary_path sock cb_sock cb_token secret_file log_file)
     else
       serve_cmd = sprintf(nil
         "%s serve --sock %s --cb-sock %s --cb-token %s --log-file %s"

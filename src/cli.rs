@@ -46,6 +46,11 @@ pub struct ServeArgs {
     #[arg(long, default_value = "")]
     pub secret: String,
 
+    /// Read the shared secret from a file then delete it (preferred over
+    /// --secret to avoid exposing the value in the process list)
+    #[arg(long, conflicts_with = "secret")]
+    pub secret_file: Option<PathBuf>,
+
     /// Log file path (stdout/stderr must stay silent — Virtuoso captures them)
     #[arg(long, default_value = "via.log")]
     pub log_file: PathBuf,
