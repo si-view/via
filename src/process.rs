@@ -66,6 +66,18 @@ pub fn process_alive(pid: u32) -> bool {
     unsafe { libc::kill(pid as libc::pid_t, 0) == 0 }
 }
 
+/// Read the entire contents of `path`, delete the file, and return the value.
+/// Trailing newlines are stripped so callers get a clean token/secret string.
+/// Used for `--secret-file` and `--cb-token-file` to keep sensitive values
+/// out of the process argument list.
+pub fn read_and_delete(path: &std::path::Path) -> Result<String> {
+    let value = std::fs::read_to_string(path)
+        .with_context(|| format!("read {}", path.display()))?;
+    std::fs::remove_file(path)
+        .with_context(|| format!("delete {}", path.display()))?;
+    Ok(value.trim_end_matches('\n').to_owned())
+}
+
 /// Send SIGTERM to a process.
 pub fn kill_process(pid: u32) -> Result<()> {
     let ret = unsafe { libc::kill(pid as libc::pid_t, libc::SIGTERM) };

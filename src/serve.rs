@@ -53,6 +53,7 @@ pub async fn run(args: ServeArgs) -> Result<()> {
     let _guard = crate::log::init_file(&args.log_file)?;
 
     let secret = Arc::new(resolve_secret(&args)?);
+    let cb_token = resolve_cb_token(&args)?;
 
     // ── channels ──────────────────────────────────────────────────────────────
     let (req_tx, req_rx) = mpsc::channel::<PendingReq>(256);
@@ -72,7 +73,7 @@ pub async fn run(args: ServeArgs) -> Result<()> {
 
     // ── background tasks ──────────────────────────────────────────────────────
     let router_handle = tokio::spawn(router_task(req_rx, cb_rx));
-    let cb_handle = tokio::spawn(cb_accept_task(cb_listener, args.cb_token.clone(), cb_tx));
+    let cb_handle = tokio::spawn(cb_accept_task(cb_listener, cb_token, cb_tx));
 
     // Monitor critical tasks — log if either exits or panics.
     tokio::spawn(async move {
@@ -317,13 +318,18 @@ fn remove_if_exists(path: &str) -> Result<()> {
 /// after being read so the secret does not linger on disk.
 fn resolve_secret(args: &crate::cli::ServeArgs) -> Result<String> {
     if let Some(path) = &args.secret_file {
-        let secret = std::fs::read_to_string(path)
-            .with_context(|| format!("read secret file {}", path.display()))?;
-        // Delete immediately — the value is now only in memory.
-        std::fs::remove_file(path)
-            .with_context(|| format!("delete secret file {}", path.display()))?;
-        Ok(secret.trim_end_matches('\n').to_owned())
+        crate::process::read_and_delete(path)
     } else {
         Ok(args.secret.clone())
+    }
+}
+
+fn resolve_cb_token(args: &crate::cli::ServeArgs) -> Result<String> {
+    if let Some(path) = &args.cb_token_file {
+        crate::process::read_and_delete(path)
+    } else {
+        args.cb_token
+            .clone()
+            .ok_or_else(|| anyhow::anyhow!("one of --cb-token or --cb-token-file is required"))
     }
 }

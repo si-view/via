@@ -14,6 +14,14 @@ use crate::cli::ForwardArgs;
 pub async fn run(args: ForwardArgs) -> Result<()> {
     let _guard = crate::log::init_file(&args.log_file)?;
 
+    let cb_token = if let Some(path) = &args.cb_token_file {
+        crate::process::read_and_delete(path)?
+    } else {
+        args.cb_token
+            .clone()
+            .ok_or_else(|| anyhow::anyhow!("one of --cb-token or --cb-token-file is required"))?
+    };
+
     let stream = connect_with_retry(&args.cb_sock).await?;
     let mut writer = tokio::io::BufWriter::new(stream);
 
@@ -21,7 +29,7 @@ pub async fn run(args: ForwardArgs) -> Result<()> {
 
     while let Some(line) = lines.next_line().await? {
         // Protocol: "<TOKEN> <original-line>\n"
-        let msg = format!("{} {}\n", args.cb_token, line);
+        let msg = format!("{} {}\n", cb_token, line);
         writer.write_all(msg.as_bytes()).await?;
         writer.flush().await?;
     }

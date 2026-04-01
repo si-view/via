@@ -52,23 +52,36 @@ procedure(si_view_start(binary_path
     (secret_file "")
     (log_file    "via.log"))
 
-  let((vpid cb_token cb_sock serve_cmd serve_pid fwd_cmd bridge_pid)
+  let((vpid cb_token cb_sock cb_token_file_serve cb_token_file_fwd
+       serve_cmd serve_pid fwd_cmd bridge_pid port)
 
     vpid     = ipcGetPid()
     cb_token = _via_gen_token()      ; local — discarded when let-block ends
     cb_sock  = sprintf(nil "/tmp/via-cb-%d.sock" vpid)
 
+    ;;; Write the token to two separate files — one per process — so each
+    ;;; binary reads and deletes its own copy without any race condition.
+    cb_token_file_serve = sprintf(nil "/tmp/via-token-serve-%d" vpid)
+    cb_token_file_fwd   = sprintf(nil "/tmp/via-token-fwd-%d" vpid)
+
+    port = outfile(cb_token_file_serve)
+    fprintf(port "%s" cb_token)
+    close(port)
+
+    port = outfile(cb_token_file_fwd)
+    fprintf(port "%s" cb_token)
+    close(port)
+
     ;;; ── serve process ─────────────────────────────────────────────────────────
-    ;;; Pass --secret-file so the secret value never appears in the process list.
-    ;;; via serve reads the file and deletes it immediately on startup.
+    ;;; --secret-file and --cb-token-file keep sensitive values out of ps aux.
     if(secret_file != "" then
       serve_cmd = sprintf(nil
-        "%s serve --sock %s --cb-sock %s --cb-token %s --secret-file %s --log-file %s"
-        binary_path sock cb_sock cb_token secret_file log_file)
+        "%s serve --sock %s --cb-sock %s --cb-token-file %s --secret-file %s --log-file %s"
+        binary_path sock cb_sock cb_token_file_serve secret_file log_file)
     else
       serve_cmd = sprintf(nil
-        "%s serve --sock %s --cb-sock %s --cb-token %s --log-file %s"
-        binary_path sock cb_sock cb_token log_file)
+        "%s serve --sock %s --cb-sock %s --cb-token-file %s --log-file %s"
+        binary_path sock cb_sock cb_token_file_serve log_file)
     )
     serve_pid = ipcBeginProcess(serve_cmd "" 'si_view_on_data "" t)
     if(!serve_pid then
@@ -77,11 +90,9 @@ procedure(si_view_start(binary_path
     _via_server_pid = serve_pid
 
     ;;; ── forward process ───────────────────────────────────────────────────────
-    ;;; ipcWriteProcess(serve_pid …) is unreliable for reading back; the forwarder
-    ;;; bridges Virtuoso → callback socket instead.
     fwd_cmd = sprintf(nil
-      "%s forward --cb-sock %s --cb-token %s"
-      binary_path cb_sock cb_token)
+      "%s forward --cb-sock %s --cb-token-file %s"
+      binary_path cb_sock cb_token_file_fwd)
     bridge_pid = ipcBeginProcess(fwd_cmd "" nil "" t)
     if(!bridge_pid then
       ipcKillProcess(_via_server_pid)
