@@ -20,6 +20,12 @@ pub enum Command {
     Forward(ForwardArgs),
     /// Send a SKILL expression or file to a running bridge server
     Send(SendArgs),
+    /// Launch a managed Virtuoso instance in the background
+    Start(StartArgs),
+    /// List all managed Virtuoso instances
+    List(ListArgs),
+    /// Kill a managed Virtuoso instance
+    Kill(KillArgs),
 }
 
 #[derive(clap::Args, Debug)]
@@ -67,11 +73,15 @@ pub struct ForwardArgs {
         .args(["eval", "load"])
 ))]
 pub struct SendArgs {
-    /// Target bridge server socket path
+    /// Instance name (looks up socket and secret from the managed registry)
+    #[arg(long)]
+    pub name: Option<String>,
+
+    /// Target bridge server socket path (ignored when --name is given)
     #[arg(long, default_value_t = default_sock())]
     pub sock: String,
 
-    /// Shared secret for authentication (must match server --secret)
+    /// Shared secret for authentication (ignored when --name is given)
     #[arg(long, default_value = "")]
     pub secret: String,
 
@@ -86,6 +96,42 @@ pub struct SendArgs {
     /// Fire-and-forget: do not wait for a result
     #[arg(long = "async")]
     pub no_wait: bool,
+}
+
+#[derive(clap::Args, Debug)]
+pub struct StartArgs {
+    /// Unique name for this Virtuoso instance
+    #[arg(long)]
+    pub name: String,
+
+    /// Working directory for the Virtuoso process (default: current directory)
+    #[arg(long)]
+    pub workspace: Option<PathBuf>,
+
+    /// Path to the `virtuoso` binary (default: `virtuoso` from PATH)
+    #[arg(long, default_value = "virtuoso")]
+    pub virtuoso: String,
+
+    /// Path to via.il (default: same directory as this binary)
+    #[arg(long)]
+    pub via_il: Option<PathBuf>,
+}
+
+#[derive(clap::Args, Debug)]
+pub struct ListArgs {
+    /// Remove dead entries from the registry
+    #[arg(long)]
+    pub prune: bool,
+}
+
+#[derive(clap::Args, Debug)]
+pub struct KillArgs {
+    /// Name of the instance to kill
+    pub name: String,
+
+    /// Send SIGKILL instead of SIGTERM
+    #[arg(long)]
+    pub force: bool,
 }
 
 fn default_sock() -> String {

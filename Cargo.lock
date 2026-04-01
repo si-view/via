@@ -778,6 +778,7 @@ dependencies = [
  "bytes",
  "clap",
  "futures-util",
+ "libc",
  "serde",
  "serde_json",
  "tokio",

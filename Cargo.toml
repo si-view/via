@@ -21,3 +21,4 @@ tracing-subscriber = { version = "0.3", features = ["fmt"] }
 tracing-appender   = "0.2"
 anyhow       = "1"
 futures-util = { version = "0.3", features = ["sink"] }
+libc         = "0.2"

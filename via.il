@@ -48,8 +48,9 @@ _via_remote_tbl  = makeTable("_via_remote" nil) ; id → opaque object
 ;;;                (omit or pass "" to disable authentication)
 procedure(si_view_start(binary_path
     @key
-    (sock    sprintf(nil "/tmp/via-%s.sock" getShellEnvVar("USER")))
-    (secret  ""))
+    (sock      sprintf(nil "/tmp/via-%s.sock" getShellEnvVar("USER")))
+    (secret    "")
+    (log_file  "via.log"))
 
   let((vpid cb_token cb_sock serve_cmd serve_pid fwd_cmd bridge_pid)
 
@@ -62,12 +63,12 @@ procedure(si_view_start(binary_path
     ;;; binary receives a well-formed argument list in both cases.
     if(secret != "" then
       serve_cmd = sprintf(nil
-        "%s serve --sock %s --cb-sock %s --cb-token %s --secret %s"
-        binary_path sock cb_sock cb_token secret)
+        "%s serve --sock %s --cb-sock %s --cb-token %s --secret %s --log-file %s"
+        binary_path sock cb_sock cb_token secret log_file)
     else
       serve_cmd = sprintf(nil
-        "%s serve --sock %s --cb-sock %s --cb-token %s"
-        binary_path sock cb_sock cb_token)
+        "%s serve --sock %s --cb-sock %s --cb-token %s --log-file %s"
+        binary_path sock cb_sock cb_token log_file)
     )
     serve_pid = ipcBeginProcess(serve_cmd "" 'si_view_on_data "" t)
     if(!serve_pid then

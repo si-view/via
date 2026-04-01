@@ -7,11 +7,15 @@ use uuid::Uuid;
 
 use crate::cli::SendArgs;
 use crate::codec;
+use crate::process::Registry;
 use crate::proto::{EvalRequest, EvalResponse};
 
 /// Connect to a running `via serve`, send one SKILL expression, and:
 ///   - (default) block until the result arrives, then print JSON to stdout.
 ///   - (--async)  fire-and-forget; exit immediately after sending.
+///
+/// When `--name` is given the socket path and secret are resolved from the
+/// managed instance registry; `--sock` and `--secret` are ignored.
 ///
 /// Output format (stdout, success):
 ///   {"id":"…","ok":true,"type":"<skill-type>","value":…}
@@ -19,11 +23,12 @@ use crate::proto::{EvalRequest, EvalResponse};
 /// Exit code 0  → ok:true
 /// Exit code 1  → ok:false or transport error (message to stderr)
 pub async fn run(args: SendArgs) -> Result<()> {
+    let (sock, secret) = resolve_target(&args)?;
     let expression = build_expression(&args)?;
 
-    let stream = UnixStream::connect(&args.sock)
+    let stream = UnixStream::connect(&sock)
         .await
-        .map_err(|e| anyhow!("connect {}: {e}", args.sock))?;
+        .map_err(|e| anyhow!("connect {}: {e}", sock))?;
 
     let (rd, wr) = stream.into_split();
     let mut reader = FramedRead::new(rd, codec::new());
@@ -32,7 +37,7 @@ pub async fn run(args: SendArgs) -> Result<()> {
     let id = Uuid::new_v4().to_string();
     let req = EvalRequest {
         id: id.clone(),
-        secret: args.secret,
+        secret,
         expression,
         no_reply: args.no_wait,
     };
@@ -60,6 +65,24 @@ pub async fn run(args: SendArgs) -> Result<()> {
         }
         Some(Err(e)) => Err(anyhow!("frame error: {e}")),
         None => Err(anyhow!("connection closed before response")),
+    }
+}
+
+/// Resolve (sock_path, secret) from either `--name` (registry lookup) or the
+/// explicit `--sock` / `--secret` flags.
+fn resolve_target(args: &SendArgs) -> Result<(String, String)> {
+    if let Some(name) = &args.name {
+        let registry = Registry::load()?;
+        let inst = registry
+            .instances
+            .get(name)
+            .ok_or_else(|| anyhow!("no managed instance named '{name}'; run `via list` to check"))?;
+        Ok((
+            inst.sock.to_string_lossy().into_owned(),
+            inst.secret.clone(),
+        ))
+    } else {
+        Ok((args.sock.clone(), args.secret.clone()))
     }
 }
 
