@@ -90,6 +90,7 @@ procedure(si_view_start(binary_path
     )
     _via_bridge_pid = bridge_pid
 
+    printf("\n  __   __ ___    _    \n  \\ \\ / /|_ _|  / \\   \n   \\ V /  | |  / _ \\  \n    \\_/  |___|/_/ \\_\\ \n  ================================\n   WeChat : si-view\n   GitHub : https://github.com/si-view/\n  ================================\n\n")
     printf("[si-view] started  pid=%d  bridge=%d  sock=%s\n"
       serve_pid bridge_pid sock)
     t
@@ -118,6 +119,19 @@ procedure(si_view_emit(name val)
         _via_esc(name)
         _via_to_json(val)))
   )
+)
+
+;;; Retrieve an opaque remote object by its handle id.
+;;;
+;;; id  — the string id that appeared in an is_ref response, e.g.
+;;;       the "id" field of {"id":"cellView:0x7f…","kind":"cellView"}
+;;;
+;;; Returns the live SKILL object, or nil if the id is not in the table.
+;;;
+;;; Example:
+;;;   cv = via_remote("cellView:0x7f3a...")
+procedure(via_remote(id)
+  _via_remote_tbl[id]
 )
 
 ;;; ── IPC callback ──────────────────────────────────────────────────────────────
@@ -342,8 +356,8 @@ procedure(_via_table_to_json(tbl)
 ;;; return a JSON stub for use inside _via_to_json (plain value context).
 ;;;
 ;;; The id is the %A representation of the object — human-readable and stable
-;;; within a session.  To retrieve the object later, evaluate:
-;;;   _via_remote_tbl["<id>"]
+;;; within a session.  To retrieve the object later use the public getter:
+;;;   via_remote("<id>")
 procedure(_via_remote_to_json(val)
   let((id kind)
     id   = sprintf(nil "%A" val)
