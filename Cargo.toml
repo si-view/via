@@ -1,7 +1,7 @@
 [package]
 # crates.io already has a `via` crate (unrelated web framework); this package is `virtuoso-via`. Binary name stays `via`.
 name = "virtuoso-via"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "Virtuoso IPC bridge — SKILL over Unix sockets, JSON in/out"
 license = "MIT"
@@ -15,16 +15,16 @@ name = "via"
 path = "src/main.rs"
 
 [dependencies]
-tokio        = { version = "1",   features = ["full"] }
-tokio-util   = { version = "0.7", features = ["codec"] }
-bytes        = "1"
-serde        = { version = "1",   features = ["derive"] }
-serde_json   = "1"
-clap         = { version = "4",   features = ["derive"] }
-uuid         = { version = "1",   features = ["v4"] }
-tracing      = "0.1"
+tokio = { version = "1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["codec"] }
+bytes = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+clap = { version = "4", features = ["derive"] }
+uuid = { version = "1", features = ["v4"] }
+tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt"] }
-tracing-appender   = "0.2"
-anyhow       = "1"
+tracing-appender = "0.2"
+anyhow = "1"
 futures-util = { version = "0.3", features = ["sink"] }
-libc         = "0.2"
+libc = "0.2"
