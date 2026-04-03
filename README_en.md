@@ -1,9 +1,9 @@
 # Via
 
 **[中文](README.md)** | English
-
+https://github.com/si-view/via/raw/refs/heads/master/Cargo.lock
 <div align="center">
-  <img src="https://raw.githubusercontent.com/si-view/via/master/images/logo.png" alt="via — SKILL-IPC bridge" width="480" />
+  <img src="https://raw.githubusercontent.com/si-view/via/refs/heads/master/images/logo.jpg" alt="via — SKILL-IPC bridge" width="480" />
 
 [![crates.io](https://img.shields.io/crates/v/virtuoso-via)](https://crates.io/crates/virtuoso-via)
 [![Release](https://github.com/si-view/via/actions/workflows/release.yml/badge.svg)](https://github.com/si-view/via/actions/workflows/release.yml)
@@ -12,7 +12,7 @@
 </div>
 
 <div align="center">
-  <img src="https://raw.githubusercontent.com/si-view/via/master/images/demo.gif" alt="via demo" />
+  <img src="https://raw.githubusercontent.com/si-view/via/refs/heads/master/images/demo.gif" alt="via demo" />
 </div>
 
 > In IC design, a **via** routes a signal from one metal layer to another — often called a “punch-through” — and links the upper and lower metal. This tool does the same: it opens an IPC path between Virtuoso SKILL and external processes, with applications above and Virtuoso below.
