@@ -1,12 +1,10 @@
-# Builds all four release targets and publishes a GitHub Release on every push
-# to master.  Version is read from Cargo.toml; pushing the same version again
-# updates the existing release assets.
+# Builds Linux release targets and publishes a GitHub Release on every push
+# to master.  macOS users can install via `cargo install`.  Version is read
+# from Cargo.toml; pushing the same version again updates existing assets.
 #
-# Targets (mirrors build.sh):
+# Targets:
 #   linux-x86_64   x86_64-unknown-linux-musl   static-pie, no glibc (musl-tools)
 #   linux-aarch64  aarch64-unknown-linux-musl   static-pie, no glibc (cross / Docker)
-#   macos-x86_64   x86_64-apple-darwin
-#   macos-aarch64  aarch64-apple-darwin
 
 name: Release
 
@@ -41,17 +39,6 @@ jobs:
             triple: aarch64-unknown-linux-musl
             runner: ubuntu-latest
             use-cross: true
-
-          # macOS universal SDK supports both targets from the same runner
-          - alias: macos-x86_64
-            triple: x86_64-apple-darwin
-            runner: macos-latest
-            use-cross: false
-
-          - alias: macos-aarch64
-            triple: aarch64-apple-darwin
-            runner: macos-latest
-            use-cross: false
 
     runs-on: ${{ matrix.runner }}
 
