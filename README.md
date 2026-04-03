@@ -4,9 +4,9 @@
 
 
 
-[crates.io](https://crates.io/crates/virtuoso-via)
-[Release](https://github.com/si-view/via/actions/workflows/release.yml)
-[Platform: Linux](https://github.com/si-view/via/releases)
+[![crates.io](https://img.shields.io/crates/v/virtuoso-via)](https://crates.io/crates/virtuoso-via)
+[![Release](https://github.com/si-view/via/actions/workflows/release.yml/badge.svg)](https://github.com/si-view/via/actions/workflows/release.yml)
+[![Platform: Linux](https://img.shields.io/badge/platform-linux-lightgrey)](https://github.com/si-view/via/releases)
 
 
 
