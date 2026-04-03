@@ -4,10 +4,18 @@
 
 
 
+<div align="center">
+  <img src="https://raw.githubusercontent.com/si-view/via/master/images/logo.png" alt="via — SKILL-IPC bridge" width="480" />
+
 [![crates.io](https://img.shields.io/crates/v/virtuoso-via)](https://crates.io/crates/virtuoso-via)
 [![Release](https://github.com/si-view/via/actions/workflows/release.yml/badge.svg)](https://github.com/si-view/via/actions/workflows/release.yml)
 [![Platform: Linux](https://img.shields.io/badge/platform-linux-lightgrey)](https://github.com/si-view/via/releases)
 
+</div>
+
+<div align="center">
+  <img src="https://raw.githubusercontent.com/si-view/via/master/images/demo.gif" alt="via demo" />
+</div>
 
 
 > IC 设计中，**via** 是将信号从一层金属引到另一层，通常称之为打孔，充当衔接上下两个金属层的作用。这个工具的作用与此相同：它在 Virtuoso SKILL 与外部进程之间打通一条 IPC 通道，上层是应用，下层是 Virtuoso。

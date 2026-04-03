@@ -11,6 +11,10 @@
 
 </div>
 
+<div align="center">
+  <img src="https://raw.githubusercontent.com/si-view/via/master/images/demo.gif" alt="via demo" />
+</div>
+
 > In IC design, a **via** routes a signal from one metal layer to another — often called a “punch-through” — and links the upper and lower metal. This tool does the same: it opens an IPC path between Virtuoso SKILL and external processes, with applications above and Virtuoso below.
 
 `via` is a lightweight Cadence Virtuoso IPC bridge written in Rust, aligned with agent-style workflows. It connects Cadence Virtuoso SKILL to external processes over a Unix domain socket. Any program can send a SKILL expression to a running Virtuoso session and receive the result as JSON.
