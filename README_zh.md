@@ -26,7 +26,7 @@
 │  callback reader  ◄── callback socket  ◄───── │────────┘
 └───────────────────────────────────────────────┘
          ▲
-    via forward
+    via forward（预留，尚无实际通路）
          ▲
     Virtuoso SKILL (si_view_on_data)
 ```
@@ -34,8 +34,10 @@
 | 进程 | 职责 | 启动方 |
 |---|---|---|
 | `via serve` | 接受客户端连接；串行调度 SKILL 求值；持有两个 socket | Virtuoso `ipcBeginProcess` |
-| `via forward` | 将 Virtuoso 输出转发到回调 socket | Virtuoso `ipcBeginProcess` |
+| `via forward` | **占位**：为后续 **Virtuoso 端主动通知**（向外推事件）预留接口；当前无实质作用 | Virtuoso `ipcBeginProcess` |
 | `via send` | 单次客户端：发送表达式，打印 JSON 结果 | Shell / 外部进程 |
+
+**关于 `via forward`：** 桥接仍会启动该进程以保持 IPC 结构一致，但端到端尚未形成可用能力。它预留给将来封装「Virtuoso → 外部进程」的主动通知，而不改动整体架构形态。
 
 ## 五分钟上手
 
@@ -116,7 +118,7 @@ via send --name ic --eval 'someHeavyTask()' --async  # fire-and-forget
 | 字符串 | `"schematic"` |
 | symbol | `"readOnly"` |
 | list | `[1, 2, 3]` |
-| plist（偶数长度、奇数位全为 symbol） | `{"layer": "M1", "purpose": "drawing"}` |
+| plist | 与 **list** 相同：按属性顺序序列化为 JSON **数组**（例如 symbol 与值交替出现，`symbol` 为 `{"__sym":"…"}`）。**不会**把 plist 展开成一个 JSON 对象。 |
 | table | `{"key1": ..., "key2": ...}` |
 | dbObject / cellView 等不可序列化对象 | 远程句柄（`is_ref: true`，见下） |
 

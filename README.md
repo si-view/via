@@ -25,7 +25,7 @@ External process
 │  callback reader  ◄── callback socket  ◄───── │────────┘
 └───────────────────────────────────────────────┘
          ▲
-    via forward
+    via forward  (reserved; not meaningful yet)
          ▲
     Virtuoso SKILL (si_view_on_data)
 ```
@@ -33,8 +33,10 @@ External process
 | Process | Role | Launched by |
 |---|---|---|
 | `via serve` | Accepts client connections; serially schedules SKILL evaluation; owns two sockets | Virtuoso `ipcBeginProcess` |
-| `via forward` | Forwards Virtuoso output to the callback socket | Virtuoso `ipcBeginProcess` |
+| `via forward` | **Placeholder** for a future Virtuoso-initiated notification path (push events to the client); currently has no practical effect | Virtuoso `ipcBeginProcess` |
 | `via send` | One-shot client: sends an expression, prints the JSON result | Shell / external process |
+
+**`via forward` today:** the bridge still starts this process to keep the IPC layout stable, but there is no real end-to-end use yet. It is reserved for later wrapping **proactive notifications from the Virtuoso side** (Virtuoso → external process) without changing the overall shape of the stack.
 
 ## Five-minute quick start
 
@@ -117,7 +119,7 @@ The response is JSON, ready for scripts or toolchains:
 | string | `"schematic"` |
 | symbol | `"readOnly"` |
 | list | `[1, 2, 3]` |
-| plist (even length, odd positions are symbols) | `{"layer": "M1", "purpose": "drawing"}` |
+| plist | Same as **list**: a JSON **array** in property order (e.g. alternating `{"__sym":"…"}` and values). Plists are **not** expanded into a single JSON object. |
 | table | `{"key1": ..., "key2": ...}` |
 | dbObject / cellView / other non-serializable objects | Remote handle (`is_ref: true`, see below) |
 
