@@ -3,12 +3,17 @@
 中文 | **[English](README.md)**
 
 <div align="center">
-  <img src="images/logo.jpg" alt="via — SKILL-IPC 连接器" width="480" />
+  <img src="https://raw.githubusercontent.com/si-view/via/master/images/logo.png" alt="via — SKILL-IPC 连接器" width="480" />
+
+[![crates.io](https://img.shields.io/crates/v/virtuoso-via)](https://crates.io/crates/virtuoso-via)
+[![Release](https://github.com/si-view/via/actions/workflows/release.yml/badge.svg)](https://github.com/si-view/via/actions/workflows/release.yml)
+[![Platform: Linux](https://img.shields.io/badge/platform-linux-lightgrey)](https://github.com/si-view/via/releases)
+
 </div>
 
 > IC 设计中，**via** 是将信号从一层金属引到另一层，通常称之为打孔，充当衔接上下两个金属层的作用。这个工具的作用与此相同：它在 Virtuoso SKILL 与外部进程之间打通一条 IPC 通道，上层是应用，下层是 Virtuoso。
 
-`via` 是由 Rust 编写的一个符合 Agent 工学的轻量级 IPC 桥接工具，通过 Unix domain socket 将 Cadence Virtuoso SKILL 与外部进程连接起来。任何程序都可以向运行中的 Virtuoso 会话发送 SKILL 表达式，并以 JSON 格式接收执行结果。
+`via` 是由 Rust 编写的一个符合 Agent 工学的轻量级(不到 2M) IPC 桥接工具，通过 Unix domain socket 将 Cadence Virtuoso SKILL 与外部进程连接起来。任何程序都可以向运行中的 Virtuoso 会话发送 SKILL 表达式，并以 JSON 格式接收执行结果。
 
 
 ## 架构
@@ -360,6 +365,16 @@ via send --name ic --eval '...'
 
 via 目前仅考虑支持 linux、mac操作系统。(考虑到 Virtuoso 本身在 windows 中似乎使用并不广泛，windows 暂时未考虑开发支持)
 
+### 通过 cargo 安装
+
+在 Linux 或 macOS 上最快捷的安装方式：
+
+```bash
+cargo install virtuoso-via
+```
+
+安装完成后 `via` 二进制会放在 `~/.cargo/bin/`，标准 Rust 安装后该路径已在 `PATH` 中。
+
 ### 前置依赖
 
 | 工具 | 安装方式 |
@@ -448,7 +463,7 @@ setenv PATH "$HOME/.local/bin:$PATH"
 我同样也有不少 web工程 相关的开发经验，对于 Virtuoso、SKILL、Bridge, 这很容易让我联想的浏览器、JavaScript、WebAssembly 之间的关系：
 在浏览器中的 dom，无论用什么语言去实现 (WebAssembly)，Wasm 本身是无法直接操作 Dom 的，最终操作 Dom 的依然还是 JavaScript，
 而类比到SKILL当中，Virtuoso 就是那个浏览器，无论外部如何转换，最终都将SKILL来进行执行。
-曾经我对 Python to Skill 的道路也做过尝试，能够解决部分问题，但依然不够。但既然 AI 已经来临，为何不将 SKILL 直接装载到 Agent SKILL，让 AI 理解 SKILL，说 Virtuso 能听得懂的语言开始呢。除非它天然就是 Python (希望能看到pyAether发力~)
+曾经我对 Python to Skill 的道路也做过尝试，能够解决部分问题，但依然不够。但既然 AI 已经来临，为何不将 SKILL 直接装载到 Agent SKILL，让 AI 理解 SKILL，说 Virtuso 能听得懂的语言开始呢。除非它天然就是 Python (希望能看到 pyAether or TED 发力~)
 
 > LLM 的训练数据里有几百万条 man page、Stack Overflow 回答和 shell 脚本。你的 CLI 不需要教它怎么用，给它看一下 --help 就够了。
 

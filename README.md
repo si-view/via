@@ -3,7 +3,12 @@
 **[中文](README_zh.md)** | English
 
 <div align="center">
-  <img src="images/logo.jpg" alt="via — SKILL-IPC bridge" width="480" />
+  <img src="https://raw.githubusercontent.com/si-view/via/master/images/logo.png" alt="via — SKILL-IPC bridge" width="480" />
+
+[![crates.io](https://img.shields.io/crates/v/virtuoso-via)](https://crates.io/crates/virtuoso-via)
+[![Release](https://github.com/si-view/via/actions/workflows/release.yml/badge.svg)](https://github.com/si-view/via/actions/workflows/release.yml)
+[![Platform: Linux](https://img.shields.io/badge/platform-linux-lightgrey)](https://github.com/si-view/via/releases)
+
 </div>
 
 > In IC design, a **via** routes a signal from one metal layer to another — often called a “punch-through” — and links the upper and lower metal. This tool does the same: it opens an IPC path between Virtuoso SKILL and external processes, with applications above and Virtuoso below.
@@ -361,6 +366,16 @@ via send --name ic --eval '...'
 
 Via targets Linux and macOS. (Virtuoso on Windows is uncommon; Windows is not a current target.)
 
+### Install via cargo
+
+The quickest way to install on any platform (Linux or macOS):
+
+```bash
+cargo install virtuoso-via
+```
+
+This compiles and places the `via` binary in `~/.cargo/bin/`, which is on `PATH` after a standard Rust installation.
+
 ### Prerequisites
 
 | Tool | Install |
@@ -441,7 +456,7 @@ setenv PATH "$HOME/.local/bin:$PATH"
 
 ## Design notes
 
-From an engineering angle, SKILL work ultimately lands back in SKILL itself. With a web background, Virtuoso / SKILL / bridge reminds me of the browser / JavaScript / WebAssembly relationship: in the browser, whatever language implements logic (e.g. Wasm), Wasm cannot touch the DOM directly — JavaScript still drives the DOM. Likewise Virtuoso is the “browser”: however you wrap things externally, execution ends in SKILL. I tried Python-to-SKILL paths; they help partly but are not enough. With AI here, why not load SKILL directly as agent skill and let the model speak the language Virtuoso understands — unless your stack is naturally Python (hoping to see pyAether gain traction).
+From an engineering angle, SKILL work ultimately lands back in SKILL itself. With a web background, Virtuoso / SKILL / bridge reminds me of the browser / JavaScript / WebAssembly relationship: in the browser, whatever language implements logic (e.g. Wasm), Wasm cannot touch the DOM directly — JavaScript still drives the DOM. Likewise Virtuoso is the “browser”: however you wrap things externally, execution ends in SKILL. I tried Python-to-SKILL paths; they help partly but are not enough. With AI here, why not load SKILL directly as agent skill and let the model speak the language Virtuoso understands — unless your stack is naturally Python (hoping to see pyAether or TED gain traction).
 
 > LLMs have millions of man pages, stack overflow answers and shell scripts in their training data. You don't need to teach them how to use your CLI, just show them the `--help`..
 
