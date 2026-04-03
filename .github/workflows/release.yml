@@ -1,0 +1,139 @@
+# Builds all four release targets and publishes a GitHub Release on every push
+# to master.  Version is read from Cargo.toml; pushing the same version again
+# updates the existing release assets.
+#
+# Targets (mirrors build.sh):
+#   linux-x86_64   x86_64-unknown-linux-musl   static-pie, no glibc (musl-tools)
+#   linux-aarch64  aarch64-unknown-linux-musl   static-pie, no glibc (cross / Docker)
+#   macos-x86_64   x86_64-apple-darwin
+#   macos-aarch64  aarch64-apple-darwin
+
+name: Release
+
+on:
+  push:
+    branches:
+      - master
+
+env:
+  CARGO_TERM_COLOR: always
+  # Mirror build.sh release profile settings
+  CARGO_PROFILE_RELEASE_OPT_LEVEL: "3"
+  CARGO_PROFILE_RELEASE_LTO: "true"
+  CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "1"
+  CARGO_PROFILE_RELEASE_STRIP: "true"
+
+jobs:
+  build:
+    name: Build ${{ matrix.alias }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Static musl — native build with musl-tools
+          - alias: linux-x86_64
+            triple: x86_64-unknown-linux-musl
+            runner: ubuntu-latest
+            use-cross: false
+
+          # Static musl — cross-compilation via cross (Docker)
+          - alias: linux-aarch64
+            triple: aarch64-unknown-linux-musl
+            runner: ubuntu-latest
+            use-cross: true
+
+          # macOS universal SDK supports both targets from the same runner
+          - alias: macos-x86_64
+            triple: x86_64-apple-darwin
+            runner: macos-latest
+            use-cross: false
+
+          - alias: macos-aarch64
+            triple: aarch64-apple-darwin
+            runner: macos-latest
+            use-cross: false
+
+    runs-on: ${{ matrix.runner }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.triple }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.triple }}
+
+      # x86_64 musl: the system musl-tools package provides musl-gcc
+      - name: Install musl-tools
+        if: matrix.alias == 'linux-x86_64'
+        run: sudo apt-get update -q && sudo apt-get install -y musl-tools
+
+      # aarch64 musl: use cross (Docker-based cross-compiler with musl baked in)
+      - name: Install cross
+        if: matrix.use-cross == true
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cross
+
+      - name: Build (cargo)
+        if: matrix.use-cross != true
+        run: cargo build --locked --release --target ${{ matrix.triple }}
+
+      - name: Build (cross)
+        if: matrix.use-cross == true
+        run: cross build --locked --release --target ${{ matrix.triple }}
+
+      - name: Stage artifact
+        run: cp target/${{ matrix.triple }}/release/via via-${{ matrix.alias }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: via-${{ matrix.alias }}
+          path: via-${{ matrix.alias }}
+
+  release:
+    name: GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read version from Cargo.toml
+        id: ver
+        run: |
+          VERSION=$(grep '^version' Cargo.toml | head -1 | sed 's/.*= *"\(.*\)"/\1/')
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: ${{ steps.ver.outputs.tag }}
+          make_latest: true
+          files: via-*
+
+  publish:
+    name: Publish to crates.io
+    needs: release
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Publish crate
+        run: cargo publish --locked
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
