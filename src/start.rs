@@ -74,9 +74,10 @@ pub fn run(args: StartArgs) -> Result<()> {
         println!("[dry-run] virtuoso log  : {}", virtuoso_log.display());
         println!("[dry-run] via log       : {}", via_log.display());
         println!(
-            "[dry-run] virtuoso      : {}{}",
+            "[dry-run] virtuoso      : {}{} -log {}",
             args.virtuoso,
-            if args.nograph { " -nograph" } else { "" }
+            if args.nograph { " -nograph" } else { "" },
+            virtuoso_log.display()
         );
         return Ok(());
     }
@@ -109,6 +110,7 @@ pub fn run(args: StartArgs) -> Result<()> {
     if args.nograph {
         cmd.arg("-nograph");
     }
+    cmd.arg("-log").arg(&virtuoso_log);
     cmd.current_dir(&workspace)
         .stdin(Stdio::null())
         .stdout(Stdio::from(virtuoso_stdout))

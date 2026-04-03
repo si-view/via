@@ -1,8 +1,14 @@
-# via
+# Via
 
-> In IC design, a **via** punches through insulating layers to carry a signal between metal layers — no transformation, just connection. This tool does the same: it bridges Virtuoso SKILL and external processes through IPC without altering the semantics of either side.
+**[中文](README_zh.md)** | English
 
-`via` is a lightweight IPC bridge that connects [Cadence Virtuoso](https://www.cadence.com/en_US/home/tools/custom-ic-analog-rf-design/circuit-design/virtuoso-studio.html) SKILL to external processes via Unix domain sockets. Any program can send a SKILL expression into a live Virtuoso session and receive the result as JSON.
+<div align="center">
+  <img src="images/logo.jpg" alt="via — SKILL-IPC bridge" width="480" />
+</div>
+
+> In IC design, a **via** routes a signal from one metal layer to another — often called a “punch-through” — and links the upper and lower metal. This tool does the same: it opens an IPC path between Virtuoso SKILL and external processes, with applications above and Virtuoso below.
+
+`via` is a lightweight Cadence Virtuoso IPC bridge written in Rust, aligned with agent-style workflows. It connects Cadence Virtuoso SKILL to external processes over a Unix domain socket. Any program can send a SKILL expression to a running Virtuoso session and receive the result as JSON.
 
 ## Architecture
 
@@ -26,199 +32,417 @@ External process
 
 | Process | Role | Launched by |
 |---|---|---|
-| `via serve` | Accepts clients; queues SKILL evaluation; owns both sockets | Virtuoso `ipcBeginProcess` |
-| `via forward` | Relays Virtuoso output to the callback socket | Virtuoso `ipcBeginProcess` |
+| `via serve` | Accepts client connections; serially schedules SKILL evaluation; owns two sockets | Virtuoso `ipcBeginProcess` |
+| `via forward` | Forwards Virtuoso output to the callback socket | Virtuoso `ipcBeginProcess` |
 | `via send` | One-shot client: sends an expression, prints the JSON result | Shell / external process |
 
-## Quick Start
+## Five-minute quick start
 
-**1. Load the bridge in Virtuoso CIW:**
+### 1. Start a Virtuoso instance
 
-```skill
-load("/path/to/via.il")
-si_view_start("/usr/local/bin/via" ?secret "your-secret")
-; [si-view] started  pid=12345  bridge=12346  sock=/tmp/via-<user>.sock
-```
-
-**2. Send expressions from any shell or process:**
+In a desktop terminal, or any terminal with `DISPLAY` set:
 
 ```bash
-via send --secret "your-secret" --eval '1 + 1'
-# {"id":"…","ok":true,"data":2,"is_ref":false,"code":0}
-
-via send --secret "your-secret" --eval 'getShellEnvVar("HOME")'
-# {"id":"…","ok":true,"data":"/home/user","is_ref":false,"code":0}
-
-via send --secret "your-secret" --eval 'dbOpenCellView("myLib" "myCell" "layout")'
-# {"id":"…","ok":true,"data":{"id":"cellView:0x7f3a…","kind":"cellView"},"is_ref":true,"code":0}
+via start --name ic   # start Virtuoso service in the current working directory
+via start --name ic --nograph          # no GUI
+via start --name ic --workspace ~/projects/my_chip   # custom workspace
 ```
 
-**3. Stop the bridge:**
+> `ic` is an alias for this Virtuoso instance. You can run several instances with different names.
 
-```skill
-si_view_stop()
+If you know the VNC display, e.g. `:1`, you can run:
+
+```bash
+env DISPLAY=:1 via start --name ic
 ```
 
-## Response Format
+from a remote terminal. Via starts Virtuoso in the background, injects the bridge, and completes the connection.
 
-Every `via send` call returns a JSON object:
+### 2. Check status
+
+```bash
+via list
+```
+
+```
+NAME   PID      STATUS   SOCK
+ic     102431   running  /tmp/via-alice-ic.sock
+
+  [ic]
+    workspace    : /home/alice/projects/my_chip
+    virtuoso log : /home/alice/.via/logs/ic-virtuoso.log
+    via log      : /home/alice/.via/logs/ic-via.log
+    started      : 2026-04-01 10:00:00 UTC
+```
+
+### 3. Send SKILL expressions
+
+```bash
+via send --name ic --eval 'geGetEditCellView()'   # current edit cellView
+via send --name ic --eval 'hiGetPoint()'           # arbitrary SKILL
+via send --name ic --load ./my_script.il           # load a SKILL file
+via send --name ic --eval 'someHeavyTask()' --async  # fire-and-forget
+```
+
+The response is JSON, ready for scripts or toolchains:
 
 ```json
-{"id":"…","ok":true, "data":<value>,        "is_ref":false,"code":0}
-{"id":"…","ok":false,"data":null,"reason":"…","is_ref":false,"code":0}
+{
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "ok": true,
+  "data": "schematic",
+  "is_ref": false,
+  "code": 0
+}
 ```
 
-| Field | Meaning |
-|---|---|
-| `ok` | `true` = success, `false` = SKILL error |
-| `data` | The result value; `null` on failure |
-| `reason` | Error description; only present when `ok` is `false` |
-| `is_ref` | `true` when `data` is a remote-object handle |
-| `code` | Reserved for future use; always `0` |
+#### Response fields
 
-### Remote objects
+| Field | Type | Description |
+|------|------|-------------|
+| `id` | string | Request UUID; useful for tracing with `--async` |
+| `ok` | bool | `true` = success; `false` = SKILL error or auth failure |
+| `data` | any | Serialized SKILL return value; `null` when `ok` is `false` |
+| `reason` | string? | Only when `ok: false`; captured error message |
+| `is_ref` | bool | `true` means `data` is a remote object handle, not a plain value (see below) |
+| `code` | int | Reserved; currently always `0` |
 
-When a SKILL expression returns an opaque object (cell view, db object, etc.), `via` stores it server-side and returns a handle:
+#### SKILL types vs. `data`
+
+| SKILL type | Example `data` |
+|-----------|----------------|
+| `nil` | `null` |
+| `t` | `true` |
+| int / float | `42` / `3.14` |
+| string | `"schematic"` |
+| symbol | `"readOnly"` |
+| list | `[1, 2, 3]` |
+| plist (even length, odd positions are symbols) | `{"layer": "M1", "purpose": "drawing"}` |
+| table | `{"key1": ..., "key2": ...}` |
+| dbObject / cellView / other non-serializable objects | Remote handle (`is_ref: true`, see below) |
+
+#### Remote object handles (`is_ref: true`)
+
+When the return value is an internal Virtuoso object (e.g. `dbobject`), Via cannot serialize it to JSON and instead returns a handle while caching the object in Virtuoso memory:
 
 ```json
-{"id":"…","ok":true,"data":{"id":"cellView:0x7f3a…","kind":"cellView"},"is_ref":true,"code":0}
+{
+  "ok": true,
+  "data": { "id": "db:0x1f7fcf1a", "kind": "dbobject" },
+  "is_ref": true,
+  "code": 0
+}
 ```
 
-Pass the `id` back in a subsequent expression to work with the object:
+Use `via_remote()` on the SKILL side to recover the object.
+
+- Get the current edit cellview:
 
 ```bash
-via send --secret "your-secret" \
-         --eval '_via_remote_tbl["cellView:0x7f3a…"]->cellName'
-# {"id":"…","ok":true,"data":"myCell","is_ref":false,"code":0}
+via send --name ic --eval 'geGetEditCellView()'
 ```
 
-## SKILL API
+Output:
 
-| Procedure | Description |
-|---|---|
-| `si_view_start(binary_path ?sock ?secret)` | Start the bridge; `?secret` is optional |
-| `si_view_stop()` | Stop the bridge |
-| `si_view_emit(name val)` | Push a named event with a SKILL value (logged server-side) |
-
-```skill
-; Custom socket path
-si_view_start("/usr/local/bin/via"
-  ?sock   "/tmp/via-myproject.sock"
-  ?secret "your-secret")
-
-; Emit events (logged on the via serve side)
-si_view_emit("progress" 75)
-si_view_emit("status" "done")
+```json
+{
+  "id": "6c9f1afd-0375-45b0-a0c3-7eaaf1cf625d",
+  "ok": true,
+  "data": {
+    "id": "db:0x2113d71a",
+    "kind": "dbobject"
+  },
+  "is_ref": true,
+  "code": 0
+}
 ```
 
-## CLI Reference
-
-```
-via send
-  --sock      <PATH>    Target socket       [default: /tmp/via-$USER.sock]
-  --secret    <SECRET>  Shared secret
-  --eval      <EXPR>    SKILL expression to evaluate
-  --load      <FILE>    Load and execute a SKILL file
-  --async               Fire-and-forget; exit without waiting for a result
-
-via serve
-  --sock      <PATH>    Socket for clients  [default: /tmp/via-$USER.sock]
-  --cb-sock   <PATH>    Callback socket     (set by SKILL)
-  --cb-token  <TOKEN>   Callback token      (set by SKILL)
-  --secret    <SECRET>  Shared secret       [default: "" = no auth]
-  --log-file  <PATH>    Log file            [default: via.log]
-
-via forward
-  --cb-sock   <PATH>    Callback socket to forward to
-  --cb-token  <TOKEN>   Token prepended to each line
-  --log-file  <PATH>    Log file            [default: via-forward.log]
-```
-
-`via serve` and `via forward` are managed by the SKILL bridge — you typically only interact with `via send`.
-
-### Examples
+- Read a property:
 
 ```bash
-# Evaluate an expression
-via send --secret "s3cr3t" --eval 'geGetEditCellView()'
+via send --name ic --eval 'via_remote("db:0x2113d71a")->cellName'
+```
 
-# Load a SKILL file
-via send --secret "s3cr3t" --load /path/to/setup.il
+Output:
 
-# Custom socket
-via send --sock /tmp/via-myproject.sock --secret "s3cr3t" --eval 'techGetTechFile()'
+```json
+{
+  "id": "7c75101b-d7a8-4a8a-bba1-25ab4909c3d1",
+  "ok": true,
+  "data": "GND",
+  "is_ref": false,
+  "code": 0
+}
+```
 
-# Fire-and-forget (no result needed)
-via send --async --secret "s3cr3t" \
-         --eval "hiDisplayAppDBox(?name 'hello ?dboxBanner \"via\")"
+- List all fields on a nested object:
+
+```bash
+via send --name ic --eval 'via_remote("db:0x2113d71a")->lib->?'
+```
+
+```json
+{
+  "id": "6775b54d-41bb-4ac5-8415-5f6885bed458",
+  "ok": true,
+  "data": [
+    {
+      "__sym": "type"
+    },
+    {
+      "__sym": "name"
+    },
+    {
+      "__sym": "readPath"
+    },
+    {
+      "__sym": "writePath"
+    },
+    {
+      "__sym": "lastModify"
+    },
+    {
+      "__sym": "owner"
+    },
+    {
+      "__sym": "ownerAccess"
+    },
+    {
+      "__sym": "group"
+    },
+    {
+      "__sym": "groupAccess"
+    },
+    {
+      "__sym": "publicAccess"
+    },
+    {
+      "__sym": "isReadable"
+    },
+    {
+      "__sym": "isWritable"
+    },
+    {
+      "__sym": "prop"
+    },
+    {
+      "__sym": "lib"
+    },
+    {
+      "__sym": "cells"
+    },
+    {
+      "__sym": "files"
+    }
+  ],
+  "is_ref": false,
+  "code": 0
+}
+```
+
+Symbol fields are marked with `__sym`.
+
+#### Failure example
+
+```json
+{
+  "id": "...",
+  "ok": false,
+  "data": null,
+  "reason": "Error: undefined function 'foo'",
+  "is_ref": false,
+  "code": 0
+}
+```
+
+When `ok` is `false`, `via send` exits with a non-zero status so shell scripts can use `&&` / `||`.
+
+### 4. Stop an instance
+
+```bash
+via kill ic
+```
+
+Via shuts down Virtuoso gracefully via SKILL `exit()` and cleans up sockets and registry entries.
+
+---
+
+## Advanced usage
+
+### Multiple instances in parallel
+
+```bash
+via start --name analog  --workspace ~/analog
+via start --name digital --workspace ~/digital
+
+via send --name analog  --eval 'getWorkingDir()'
+via send --name digital --eval 'getWorkingDir()'
+```
+
+### Dry-run (check preconditions without executing)
+
+Some Via commands support `--dry-run`:
+
+```bash
+via start --name ic --dry-run
+via kill  ic --dry-run
+via send  --name ic --eval 'hiGetPoint()' --dry-run
+```
+
+### Prune stale instances
+
+```bash
+via list --prune
+```
+
+### Full CLI reference
+
+```
+via start  --name <name> [--workspace <path>] [--virtuoso <bin>] [--nograph] [--dry-run]
+via list   [--prune] [--dry-run]
+via kill   <name> [--force] [--dry-run]
+via send   --name <name> (--eval <expr> | --load <file>) [--async] [--dry-run]
+via send   --sock <path> [--secret <s>] (--eval <expr> | --load <file>) [--async]
+```
+
+### Integrating with external tools
+
+Via’s JSON output is easy to consume from any language and fits LLM tool calling (function calling): wrap `via send` as a tool and you can drive Virtuoso with natural language — read layouts, query netlists, trigger DRC/LVS, and more.
+
+**In the AI wave sweeping IC design, via is all you need.**
+
+### Security: shared-secret workflow
+
+Via uses a shared secret so unauthorized processes cannot send arbitrary SKILL to Virtuoso.
+
+#### How it works
+
+On `via start`, Via generates a random secret and writes it to `~/.via/registry.json` (user-readable only). After Virtuoso starts, internal IPC launches `via serve` and synchronizes the secret; both sides complete the handshake.
+
+```
+via start
+  │
+  ├─ generate random secret
+  ├─ write ~/.via/registry.json (user-readable only)
+  │
+  └─ start Virtuoso
+        └─ Virtuoso starts the via daemon via IPC and syncs the secret
+              └─ secrets match → bridge ready
+
+via send --name ic --eval '...'
+  └─ read secret from registry, attach to each request to via serve
+        └─ via serve verifies → execute and return
+           verification fails → connection rejected
 ```
 
 ## Comparison with skillbridge
 
-[skillbridge](https://github.com/unihd-cag/skillbridge) is a well-established open-source project that bridges Cadence Virtuoso SKILL to Python. It loads a SKILL server (`server.il`) into Virtuoso and exposes SKILL functions as Python proxy objects, so callers can write `ws.db.open_cell_view(...)` directly in Python.
+[skillbridge](https://github.com/unihd-cag/skillbridge) is a mature open-source project that bridges Cadence Virtuoso SKILL to Python. It loads a SKILL server script (`server.il`) in Virtuoso and wraps SKILL functions as Python proxy objects so callers can write `ws.db.open_cell_view(...)` in Python.
 
 `via` takes a different approach:
 
 | | skillbridge | via |
 |---|---|---|
 | **Client language** | Python only | Any — shell, Rust, Python, Go, … |
-| **Interface** | Python proxy objects wrapping SKILL functions | Raw SKILL expression strings |
+| **Interface** | Python proxies around SKILL functions | Raw SKILL expression strings |
 | **Transport** | TCP or Unix socket | Unix socket |
 | **Authentication** | None built-in | Shared secret (`--secret`) |
 | **Deployment** | `pip install skillbridge` + Python runtime | Single static binary, no runtime |
 | **Async** | Synchronous | Synchronous (default) or fire-and-forget (`--async`) |
 | **Response** | Python objects | Structured JSON (`data`, `ok`, `is_ref`, `code`) |
 
-**When to use skillbridge:** You are working in Python and want to call SKILL functions with a natural, Pythonic API. It is the right choice for interactive scripting and Jupyter workflows.
+**When to use skillbridge:** You work in Python and want a Pythonic way to call SKILL — great for interactive scripts and Jupyter.
 
-**When to use via:** You need a language-agnostic, deployment-friendly bridge — for example, integrating Virtuoso into a non-Python pipeline, a CI script, or a compiled service. The single static binary and structured JSON responses make it straightforward to embed in any toolchain.
-
-## Security
-
-- **`--secret`** is a shared secret between `via serve` and `via send` callers. Omit it only in isolated local environments.
-- Transport is a Unix domain socket — filesystem permissions control who can connect.
-- The secret must not contain spaces or shell metacharacters; a 32-character hex string is recommended.
+**When to use via:** You want a language-agnostic, easy-to-deploy bridge — e.g. Virtuoso in a non-Python toolchain, or SKILL as first-class “agent skill.” Maybe via is all you need.
 
 ## Build
+
+Via targets Linux and macOS. (Virtuoso on Windows is uncommon; Windows is not a current target.)
 
 ### Prerequisites
 
 | Tool | Install |
 |---|---|
 | Rust toolchain | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh` |
-| musl cross-compiler (Linux targets) | `brew install musl-cross` |
+| musl cross-compiler (Linux targets, optional) | `brew install musl-cross` |
 
-### Build all targets
+### Compile
+
+**Current host triple**
 
 ```bash
+cargo build --release
+```
+
+The first `cargo build` fetches crates from crates.io; you do not need `cargo install`. (Optional: `cargo fetch` to prefetch only.)
+
+**Multiple architectures and Linux musl**
+
+`./build.sh` builds Linux (musl static) and macOS targets in one go.
+
+```bash
+./build.sh                              # all targets
+./build.sh linux-x86_64                 # one or more targets
+./build.sh linux-x86_64 macos-aarch64
+./build.sh --debug linux-x86_64         # debug build
+```
+
+If the musl cross compiler is not under the default Homebrew path (Apple Silicon: `/opt/homebrew/opt/musl-cross/bin`; Intel: `/usr/local/opt/musl-cross/bin`), set:
+
+```bash
+export VIA_MUSL_BIN="/your/path/bin"
 ./build.sh
 ```
 
-Output in `dist/`:
+Artifacts default to `dist/` in the project; override with `VIA_DIST_DIR`.
 
 ```
 dist/
-├── via-linux-x86_64    # ELF x86-64, static-pie, stripped
-├── via-linux-aarch64   # ELF aarch64, static-pie, stripped
-├── via-macos-x86_64    # Mach-O x86_64
-└── via-macos-aarch64   # Mach-O arm64
+├── via-linux-x86_64    # ELF x86-64, static, stripped
+├── via-linux-aarch64   # ELF aarch64, static, stripped
 ```
 
-### Build a specific target
-
-```bash
-./build.sh linux-x86_64
-./build.sh macos-aarch64
-./build.sh --debug linux-x86_64   # debug build
-```
+**Linux and glibc:** `via-linux-x86_64` and `via-linux-aarch64` are **statically linked with musl** and **do not depend** on the host **glibc** (or a distro-specific libc). That avoids “built on a newer distro, won’t run on older RHEL/CentOS because of glibc” issues. With a **matching CPU architecture** (x86_64 or AArch64), the same Linux binary usually runs across mainstream distros and versions (subject to kernel, permissions, and normal executable requirements).
 
 ## Deployment
 
-Copy the binary to the target machine — no runtime dependencies:
+Copy the single binary — no extra runtime. That includes older Linux boxes when using the static musl build above.
+
+**System-wide (needs root / sudo)**
 
 ```bash
-scp dist/via-linux-x86_64 user@eda-server:/usr/local/bin/via
-chmod +x /usr/local/bin/via
+scp dist/via-linux-x86_64 user@ic:/tmp/via
+ssh user@ic 'sudo install -m 755 /tmp/via /usr/local/bin/via && rm /tmp/via'
 ```
 
-Load `via.il` in Virtuoso and call `si_view_start`.
+Or use `sudo cp` / `sudo chmod 755` to place the binary in `/usr/local/bin/via` (or `/usr/bin` per your distro).
+
+**User directory (no root)**
+
+```bash
+mkdir -p ~/.local/bin
+scp dist/via-linux-x86_64 user@ic:~/.local/bin/via
+ssh user@ic chmod +x ~/.local/bin/via
+```
+
+Ensure `PATH` includes `~/.local/bin`, e.g. in `~/.bashrc`:
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+For csh/tcsh, in `~/.cshrc`:
+
+```csh
+setenv PATH "$HOME/.local/bin:$PATH"
+```
+
+## Design notes
+
+From an engineering angle, SKILL work ultimately lands back in SKILL itself. With a web background, Virtuoso / SKILL / bridge reminds me of the browser / JavaScript / WebAssembly relationship: in the browser, whatever language implements logic (e.g. Wasm), Wasm cannot touch the DOM directly — JavaScript still drives the DOM. Likewise Virtuoso is the “browser”: however you wrap things externally, execution ends in SKILL. I tried Python-to-SKILL paths; they help partly but are not enough. With AI here, why not load SKILL directly as agent skill and let the model speak the language Virtuoso understands — unless your stack is naturally Python (hoping to see pyAether gain traction).
+
+> LLMs have millions of man pages, stack overflow answers and shell scripts in their training data. You don't need to teach them how to use your CLI, just show them the `--help`..
+
+LLMs already know how to use CLI tools. I hope `via` can be your bridge while we watch what agents do in IC.
+
+WeChat: 「芯上视图」

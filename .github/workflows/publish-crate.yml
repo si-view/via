@@ -1,0 +1,37 @@
+# Publishes this package to https://crates.io
+#
+# Setup:
+# 1. Log in at https://crates.io/settings/tokens and create an API token.
+# 2. In the GitHub repo: Settings → Secrets and variables → Actions → New repository secret
+#    Name: CRATES_IO_TOKEN   Value: <token>
+# 3. Bump version in Cargo.toml, commit, then tag and push:
+#    git tag v0.1.1 && git push origin v0.1.1
+#    (Or run this workflow manually from the Actions tab after the version bump is on the default branch.)
+
+name: Publish crate
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  publish:
+    name: cargo publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: cargo test
+        run: cargo test --locked --release
+
+      - name: cargo publish
+        run: cargo publish --locked --token ${{ secrets.CRATES_IO_TOKEN }}

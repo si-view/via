@@ -12,11 +12,27 @@
 #   ./build.sh linux-x86_64                  # one target
 #   ./build.sh linux-x86_64 linux-aarch64    # multiple targets
 #   ./build.sh --debug linux-x86_64          # debug profile
+#
+# Environment (optional; unset → sensible default):
+#   VIA_MUSL_BIN          Directory with musl-cross *-linux-musl-gcc / *-ar
+#   VIA_DIST_DIR          Output directory for copied binaries (default: ./dist)
+#   CARGO_TARGET_*_LINKER / *_AR   Override per-target linker (default: under VIA_MUSL_BIN)
+#   CARGO_PROFILE_RELEASE_*        Override release profile (default: LTO, strip, etc.)
 
 set -euo pipefail
 
-MUSL_BIN="/opt/homebrew/opt/musl-cross/bin"
-DIST_DIR="$(cd "$(dirname "$0")" && pwd)/dist"
+# musl-cross bin dir: VIA_MUSL_BIN wins; else Homebrew ARM / Intel heuristic
+if [ -n "${VIA_MUSL_BIN:-}" ]; then
+    MUSL_BIN="${VIA_MUSL_BIN}"
+elif [ -d "/opt/homebrew/opt/musl-cross/bin" ]; then
+    MUSL_BIN="/opt/homebrew/opt/musl-cross/bin"
+elif [ -d "/usr/local/opt/musl-cross/bin" ]; then
+    MUSL_BIN="/usr/local/opt/musl-cross/bin"
+else
+    MUSL_BIN="/opt/homebrew/opt/musl-cross/bin"
+fi
+
+DIST_DIR="${VIA_DIST_DIR:-$(cd "$(dirname "$0")" && pwd)/dist}"
 ALL_TARGETS="linux-x86_64 linux-aarch64 macos-x86_64 macos-aarch64"
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -48,13 +64,13 @@ human_size() {
 check_musl_toolchain() {
     case "$1" in
         linux-x86_64)
-            if [ ! -x "${MUSL_BIN}/x86_64-linux-musl-gcc" ]; then
-                err "x86_64 musl toolchain not found: brew install musl-cross"
+            if [ ! -x "${CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER}" ]; then
+                err "x86_64 musl toolchain not found (linker: ${CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER}); brew install musl-cross or set VIA_MUSL_BIN / CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER"
                 return 1
             fi ;;
         linux-aarch64)
-            if [ ! -x "${MUSL_BIN}/aarch64-linux-musl-gcc" ]; then
-                err "aarch64 musl toolchain not found: brew install musl-cross"
+            if [ ! -x "${CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER}" ]; then
+                err "aarch64 musl toolchain not found (linker: ${CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER}); brew install musl-cross or set VIA_MUSL_BIN / CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER"
                 return 1
             fi ;;
     esac
@@ -92,6 +108,21 @@ for arg in "$@"; do
 done
 
 [ -z "$BUILD_TARGETS" ] && BUILD_TARGETS="$ALL_TARGETS"
+
+# ── Cargo settings (same as repo .cargo/config.toml) via env ────────────────
+# Pre-set CARGO_* or VIA_MUSL_BIN override; otherwise defaults below apply.
+
+export CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER="${CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER:-${MUSL_BIN}/x86_64-linux-musl-gcc}"
+export CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_AR="${CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_AR:-${MUSL_BIN}/x86_64-linux-musl-ar}"
+export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER="${CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER:-${MUSL_BIN}/aarch64-linux-musl-gcc}"
+export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_AR="${CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_AR:-${MUSL_BIN}/aarch64-linux-musl-ar}"
+
+if [ "$PROFILE" = "release" ]; then
+    export CARGO_PROFILE_RELEASE_OPT_LEVEL="${CARGO_PROFILE_RELEASE_OPT_LEVEL:-3}"
+    export CARGO_PROFILE_RELEASE_LTO="${CARGO_PROFILE_RELEASE_LTO:-true}"
+    export CARGO_PROFILE_RELEASE_CODEGEN_UNITS="${CARGO_PROFILE_RELEASE_CODEGEN_UNITS:-1}"
+    export CARGO_PROFILE_RELEASE_STRIP="${CARGO_PROFILE_RELEASE_STRIP:-true}"
+fi
 
 # ── version ───────────────────────────────────────────────────────────────────
 

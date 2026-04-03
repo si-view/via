@@ -243,13 +243,9 @@ procedure(_via_to_typed_json(val)
       (stringp(val)
         value_json = sprintf(nil "\"%s\"" _via_esc(val)))
       (symbolp(val)
-        value_json = sprintf(nil "\"%s\"" _via_esc(symbolToString(val))))
+        value_json = sprintf(nil "{\"__sym\":\"%s\"}" _via_esc(symbolToString(val))))
       (listp(val)
-        if(_via_is_plist(val) then
-          value_json = _via_plist_to_json(val)
-        else
-          value_json = _via_list_to_json(val)
-        ))
+        value_json = _via_list_to_json(val))
       (tablep(val)
         value_json = _via_table_to_json(val))
       (t
@@ -276,10 +272,7 @@ procedure(_via_to_json(val)
     (floatp(val)   _via_fmt_float(val))
     (stringp(val)  sprintf(nil "\"%s\"" _via_esc(val)))
     (symbolp(val)  sprintf(nil "{\"__sym\":\"%s\"}" val))
-    (listp(val)    if(_via_is_plist(val) then
-                     _via_plist_to_json(val)
-                   else
-                     _via_list_to_json(val)))
+    (listp(val)    _via_list_to_json(val))
     (tablep(val)   _via_table_to_json(val))
     (t             _via_remote_to_json(val))
   )
@@ -316,38 +309,6 @@ procedure(_via_esc(s)
 
 procedure(_via_list_to_json(lst)
   sprintf(nil "[%s]" buildString(mapcar('_via_to_json lst) ","))
-)
-
-;;; A plist is a list of even length whose odd-indexed elements are symbols.
-;;; It serialises to a JSON object: (x 1 y 2) → {"x":1,"y":2}
-procedure(_via_is_plist(lst)
-  let((len ok i)
-    len = length(lst)
-    ok  = len > 0 && mod(len 2) == 0
-    i   = 1
-    while(ok && i <= len
-      if(symbolp(nth(i - 1 lst)) then
-        i = i + 2
-      else
-        ok = nil
-      )
-    )
-    ok
-  )
-)
-
-procedure(_via_plist_to_json(lst)
-  let((pairs i len)
-    pairs = list()
-    len   = length(lst)
-    i     = 1
-    while(i < len
-      pairs = append1(pairs
-        sprintf(nil "\"%s\":%s" nth(i - 1 lst) _via_to_json(nth(i lst))))
-      i = i + 2
-    )
-    sprintf(nil "{%s}" buildString(pairs ","))
-  )
 )
 
 procedure(_via_table_to_json(tbl)

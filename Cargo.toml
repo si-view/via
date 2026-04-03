@@ -1,8 +1,14 @@
 [package]
-name = "via"
+# crates.io already has a `via` crate (unrelated web framework); this package is `virtuoso-via`. Binary name stays `via`.
+name = "virtuoso-via"
 version = "0.1.0"
 edition = "2021"
-description = "Virtuoso IPC bridge — punches through layers like a via"
+description = "Virtuoso IPC bridge — SKILL over Unix sockets, JSON in/out"
+license = "MIT"
+readme = "README.md"
+repository = "https://github.com/si-view/via"
+keywords = ["virtuoso", "cadence", "skill", "ipc", "eda"]
+categories = ["command-line-utilities", "development-tools"]
 
 [[bin]]
 name = "via"
