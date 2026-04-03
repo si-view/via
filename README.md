@@ -45,6 +45,16 @@ External process
 
 ## Five-minute quick start
 
+### 0. Install
+
+```bash
+cargo install virtuoso-via
+```
+
+> No Rust? Install it first: `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
+>
+> Linux users who prefer a pre-built static binary (no glibc) can grab one from [Releases](https://github.com/si-view/via/releases).
+
 ### 1. Start a Virtuoso instance
 
 In a desktop terminal, or any terminal with `DISPLAY` set:

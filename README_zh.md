@@ -2,19 +2,17 @@
 
 中文 | **[English](README.md)**
 
-<div align="center">
-  <img src="https://raw.githubusercontent.com/si-view/via/master/images/logo.png" alt="via — SKILL-IPC 连接器" width="480" />
 
-[![crates.io](https://img.shields.io/crates/v/virtuoso-via)](https://crates.io/crates/virtuoso-via)
-[![Release](https://github.com/si-view/via/actions/workflows/release.yml/badge.svg)](https://github.com/si-view/via/actions/workflows/release.yml)
-[![Platform: Linux](https://img.shields.io/badge/platform-linux-lightgrey)](https://github.com/si-view/via/releases)
 
-</div>
+[crates.io](https://crates.io/crates/virtuoso-via)
+[Release](https://github.com/si-view/via/actions/workflows/release.yml)
+[Platform: Linux](https://github.com/si-view/via/releases)
+
+
 
 > IC 设计中，**via** 是将信号从一层金属引到另一层，通常称之为打孔，充当衔接上下两个金属层的作用。这个工具的作用与此相同：它在 Virtuoso SKILL 与外部进程之间打通一条 IPC 通道，上层是应用，下层是 Virtuoso。
 
 `via` 是由 Rust 编写的一个符合 Agent 工学的轻量级(不到 2M) IPC 桥接工具，通过 Unix domain socket 将 Cadence Virtuoso SKILL 与外部进程连接起来。任何程序都可以向运行中的 Virtuoso 会话发送 SKILL 表达式，并以 JSON 格式接收执行结果。
-
 
 ## 架构
 
@@ -36,27 +34,38 @@
     Virtuoso SKILL (si_view_on_data)
 ```
 
-| 进程 | 职责 | 启动方 |
-|---|---|---|
-| `via serve` | 接受客户端连接；串行调度 SKILL 求值；持有两个 socket | Virtuoso `ipcBeginProcess` |
+
+| 进程            | 职责                                               | 启动方                        |
+| ------------- | ------------------------------------------------ | -------------------------- |
+| `via serve`   | 接受客户端连接；串行调度 SKILL 求值；持有两个 socket                | Virtuoso `ipcBeginProcess` |
 | `via forward` | **占位**：为后续 **Virtuoso 端主动通知**（向外推事件）预留接口；当前无实质作用 | Virtuoso `ipcBeginProcess` |
-| `via send` | 单次客户端：发送表达式，打印 JSON 结果 | Shell / 外部进程 |
+| `via send`    | 单次客户端：发送表达式，打印 JSON 结果                           | Shell / 外部进程               |
+
 
 **关于 `via forward`：** 桥接仍会启动该进程以保持 IPC 结构一致，但端到端尚未形成可用能力。它预留给将来封装「Virtuoso → 外部进程」的主动通知，而不改动整体架构形态。
 
 ## 五分钟上手
 
+### 0. 安装
+
+```bash
+cargo install virtuoso-via
+```
+
+> 没有 Rust？先执行：`curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
+>
+> Linux 用户也可以从 [Releases](https://github.com/si-view/via/releases) 下载预编译的静态二进制（无 glibc 依赖）。(支持古董级别操作系统，如 centos/rhel 6.9)
+
 ### 1. 启动 Virtuoso 实例
 
-
 在桌面的终端中，或在指定了`DISPLAY`环境变量的终端中执行：
-
 
 ```bash
 via start --name ic # 在当前工作路径启动 virtuoso 服务
 via start --name ic --nograph          # 无 GUI 模式
 via start --name ic --workspace ~/projects/my_chip  # 指定工作目录
 ```
+
 > `ic` 是你给 virtuoso 实例启动的别名，你可以开启多个 virtuoso 实例，只需要赋予不同的别名。
 
 如果你知道VNC 启动的端口号，如`:1`
@@ -64,6 +73,7 @@ via start --name ic --workspace ~/projects/my_chip  # 指定工作目录
 那么可以 `env DISPLAY=:1 via start --name ic`即可在远程终端直接启动。
 
 执行后, Via 在后台启动 Virtuoso，自动注入桥接模块并完成连接。
+
 ### 2. 查看运行状态
 
 ```bash
@@ -104,28 +114,32 @@ via send --name ic --eval 'someHeavyTask()' --async  # fire-and-forget
 
 #### 返回值字段说明
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `id` | string | 请求 UUID，`--async` 模式下可用于追踪 |
-| `ok` | bool | `true` = 执行成功；`false` = SKILL 报错或鉴权失败 |
-| `data` | any | SKILL 返回值序列化后的 JSON；`ok` 为 `false` 时固定为 `null` |
-| `reason` | string? | 仅在 `ok: false` 时出现，返回尝试捕获的 error 信息 |
-| `is_ref` | bool | `true` 表示 `data` 是远程对象句柄，而非普通值（见下） |
-| `code` | int | 保留字段，当前恒为 `0` |
+
+| 字段       | 类型      | 说明                                             |
+| -------- | ------- | ---------------------------------------------- |
+| `id`     | string  | 请求 UUID，`--async` 模式下可用于追踪                     |
+| `ok`     | bool    | `true` = 执行成功；`false` = SKILL 报错或鉴权失败          |
+| `data`   | any     | SKILL 返回值序列化后的 JSON；`ok` 为 `false` 时固定为 `null` |
+| `reason` | string? | 仅在 `ok: false` 时出现，返回尝试捕获的 error 信息            |
+| `is_ref` | bool    | `true` 表示 `data` 是远程对象句柄，而非普通值（见下）             |
+| `code`   | int     | 保留字段，当前恒为 `0`                                  |
+
 
 #### SKILL 类型与 `data` 的对应关系
 
-| SKILL 类型 | `data` 示例 |
-|-----------|------------|
-| `nil` | `null` |
-| `t` | `true` |
-| 整数 / 浮点数 | `42` / `3.14` |
-| 字符串 | `"schematic"` |
-| symbol | `"readOnly"` |
-| list | `[1, 2, 3]` |
-| plist | 与 **list** 相同：按属性顺序序列化为 JSON **数组**（例如 symbol 与值交替出现，`symbol` 为 `{"__sym":"…"}`）。**不会**把 plist 展开成一个 JSON 对象。 |
-| table | `{"key1": ..., "key2": ...}` |
-| dbObject / cellView 等不可序列化对象 | 远程句柄（`is_ref: true`，见下） |
+
+| SKILL 类型                     | `data` 示例                                                                                                     |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `nil`                        | `null`                                                                                                        |
+| `t`                          | `true`                                                                                                        |
+| 整数 / 浮点数                     | `42` / `3.14`                                                                                                 |
+| 字符串                          | `"schematic"`                                                                                                 |
+| symbol                       | `"readOnly"`                                                                                                  |
+| list                         | `[1, 2, 3]`                                                                                                   |
+| plist                        | 与 **list** 相同：按属性顺序序列化为 JSON **数组**（例如 symbol 与值交替出现，`symbol` 为 `{"__sym":"…"}`）。**不会**把 plist 展开成一个 JSON 对象。 |
+| table                        | `{"key1": ..., "key2": ...}`                                                                                  |
+| dbObject / cellView 等不可序列化对象 | 远程句柄（`is_ref: true`，见下）                                                                                       |
+
 
 #### 远程对象句柄（`is_ref: true`）
 
@@ -143,11 +157,13 @@ via send --name ic --eval 'someHeavyTask()' --async  # fire-and-forget
 后续可通过 `via_remote()` 在 SKILL 侧取回该对象：
 
 - 获取当前打开的 cellview 对象
+
 ```bash
 via send --name ic --eval 'geGetEditCellView()'
 ```
 
 输出：
+
 ```json
 {
   "id": "6c9f1afd-0375-45b0-a0c3-7eaaf1cf625d",
@@ -169,6 +185,7 @@ via send --name ic --eval 'via_remote("db:0x2113d71a")->cellName'
 ```
 
 输出
+
 ```json
 {
   "id": "7c75101b-d7a8-4a8a-bba1-25ab4909c3d1",
@@ -307,7 +324,6 @@ via send   --name <name> (--eval <expr> | --load <file>) [--async] [--dry-run]
 via send   --sock <path> [--secret <s>] (--eval <expr> | --load <file>) [--async]
 ```
 
-
 ### 与外部工具集成
 
 Via 的 JSON 输出格式适合从任意语言消费，也适合接入 LLM 工具调用（Function Calling）——将 `via send` 封装为工具，即可通过自然语言驱动 Virtuoso 读取版图、查询网表、触发 DRC/LVS 等操作。
@@ -344,22 +360,21 @@ via send --name ic --eval '...'
 
 `via` 采取了不同的设计思路：
 
-| | skillbridge | via |
-|---|---|---|
-| **客户端语言** | 仅 Python | 任意语言——Shell、Rust、Python、Go 等均可 |
-| **接口形式** | Python 代理对象，封装 SKILL 函数 | 原始 SKILL 表达式字符串 |
-| **传输方式** | TCP 或 Unix socket | Unix socket |
-| **鉴权** | 无内置鉴权 | 共享密钥（`--secret`） |
-| **部署方式** | `pip install skillbridge` + Python 运行时 | 单个静态二进制，无运行时依赖 |
-| **异步支持** | 同步 | 同步（默认）或发后不管（`--async`） |
-| **返回格式** | Python 对象 | 结构化 JSON（`data`、`ok`、`is_ref`、`code`） |
+
+|           | skillbridge                            | via                                   |
+| --------- | -------------------------------------- | ------------------------------------- |
+| **客户端语言** | 仅 Python                               | 任意语言——Shell、Rust、Python、Go 等均可        |
+| **接口形式**  | Python 代理对象，封装 SKILL 函数                | 原始 SKILL 表达式字符串                       |
+| **传输方式**  | TCP 或 Unix socket                      | Unix socket                           |
+| **鉴权**    | 无内置鉴权                                  | 共享密钥（`--secret`）                      |
+| **部署方式**  | `pip install skillbridge` + Python 运行时 | 单个静态二进制，无运行时依赖                        |
+| **异步支持**  | 同步                                     | 同步（默认）或发后不管（`--async`）                |
+| **返回格式**  | Python 对象                              | 结构化 JSON（`data`、`ok`、`is_ref`、`code`） |
+
 
 **适合使用 skillbridge 的场景：** 你在 Python 环境中工作，希望以 Pythonic 的方式调用 SKILL 函数。它非常适合交互式脚本和 Jupyter 工作流。
 
 **适合使用 via 的场景：** 你需要一个语言无关、部署简单的桥接方案——例如将 Virtuoso 集成到非 Python 的工具链、让 SKILL 成为真正的 Agent SKILL，也许，via is all your need!
-
-
-
 
 ## 构建
 
@@ -377,10 +392,12 @@ cargo install virtuoso-via
 
 ### 前置依赖
 
-| 工具 | 安装方式 |
-|---|---|
-| Rust 工具链 | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh` |
-| musl 交叉编译器（Linux 目标）（可选） | `brew install musl-cross` |
+
+| 工具                       | 安装方式                                                             |
+| ------------------------ | ---------------------------------------------------------------- |
+| Rust 工具链                 | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh` |
+| musl 交叉编译器（Linux 目标）（可选） | `brew install musl-cross`                                        |
+
 
 ### 编译
 
@@ -455,8 +472,6 @@ export PATH="$HOME/.local/bin:$PATH"
 setenv PATH "$HOME/.local/bin:$PATH"
 ```
 
-
-
 ## 设计思考
 
 在工程角度上，我认为SKILL的内容，最终都会回到SKILL本身，
@@ -468,6 +483,5 @@ setenv PATH "$HOME/.local/bin:$PATH"
 > LLM 的训练数据里有几百万条 man page、Stack Overflow 回答和 shell 脚本。你的 CLI 不需要教它怎么用，给它看一下 --help 就够了。
 
 LLM 天然就知道如何使用 cli 工具，希望 via 能够作为各位的 bridge，替我看 Agent 在 IC 将会展现何种神力。
-
 
 公众号：「芯上视图」
