@@ -122,7 +122,7 @@ The response is JSON, ready for scripts or toolchains:
 | Field | Type | Description |
 |------|------|-------------|
 | `id` | string | Request UUID; useful for tracing with `--async` |
-| `ok` | bool | `true` = success; `false` = SKILL error or auth failure |
+| `ok` | bool | `true` = success; `false` = SKILL error |
 | `data` | any | Serialized SKILL return value; `null` when `ok` is `false` |
 | `reason` | string? | Only when `ok: false`; captured error message |
 | `is_ref` | bool | `true` means `data` is a remote object handle, not a plain value (see below) |
@@ -332,30 +332,6 @@ Via’s JSON output is easy to consume from any language and fits LLM tool calli
 
 **In the AI wave sweeping IC design, via is all you need.**
 
-### Security: shared-secret workflow
-
-Via uses a shared secret so unauthorized processes cannot send arbitrary SKILL to Virtuoso.
-
-#### How it works
-
-On `via start`, Via generates a random secret and writes it to `~/.via/registry.json` (user-readable only). After Virtuoso starts, internal IPC launches `via serve` and synchronizes the secret; both sides complete the handshake.
-
-```
-via start
-  │
-  ├─ generate random secret
-  ├─ write ~/.via/registry.json (user-readable only)
-  │
-  └─ start Virtuoso
-        └─ Virtuoso starts the via daemon via IPC and syncs the secret
-              └─ secrets match → bridge ready
-
-via send --name ic --eval '...'
-  └─ read secret from registry, attach to each request to via serve
-        └─ via serve verifies → execute and return
-           verification fails → connection rejected
-```
-
 ## Comparison with skillbridge
 
 [skillbridge](https://github.com/unihd-cag/skillbridge) is a mature open-source project that bridges Cadence Virtuoso SKILL to Python. It loads a SKILL server script (`server.il`) in Virtuoso and wraps SKILL functions as Python proxy objects so callers can write `ws.db.open_cell_view(...)` in Python.
@@ -367,7 +343,6 @@ via send --name ic --eval '...'
 | **Client language** | Python only | Any — shell, Rust, Python, Go, … |
 | **Interface** | Python proxies around SKILL functions | Raw SKILL expression strings |
 | **Transport** | TCP or Unix socket | Unix socket |
-| **Authentication** | None built-in | Shared secret (`--secret`) |
 | **Deployment** | `pip install skillbridge` + Python runtime | Single static binary, no runtime |
 | **Async** | Synchronous | Synchronous (default) or fire-and-forget (`--async`) |
 | **Response** | Python objects | Structured JSON (`data`, `ok`, `is_ref`, `code`) |

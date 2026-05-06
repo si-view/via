@@ -127,7 +127,7 @@ via send --name ic --eval 'someHeavyTask()' --async  # fire-and-forget
 | 字段       | 类型      | 说明                                             |
 | -------- | ------- | ---------------------------------------------- |
 | `id`     | string  | 请求 UUID，`--async` 模式下可用于追踪                     |
-| `ok`     | bool    | `true` = 执行成功；`false` = SKILL 报错或鉴权失败          |
+| `ok`     | bool    | `true` = 执行成功；`false` = SKILL 报错                 |
 | `data`   | any     | SKILL 返回值序列化后的 JSON；`ok` 为 `false` 时固定为 `null` |
 | `reason` | string? | 仅在 `ok: false` 时出现，返回尝试捕获的 error 信息            |
 | `is_ref` | bool    | `true` 表示 `data` 是远程对象句柄，而非普通值（见下）             |
@@ -339,30 +339,6 @@ Via 的 JSON 输出格式适合从任意语言消费，也适合接入 LLM 工�
 
 **在 IC 圈爆火的 AI 浪潮，via is all you need。**
 
-### 安全性：密钥工作流
-
-Via 使用共享密钥防止未授权进程向 Virtuoso 发送任意 SKILL 代码。
-
-#### 工作原理
-
-执行 `via start` 时，Via 随机生成密钥并写入 `~/.via/registry.json`（仅当前用户可读）。Virtuoso 启动后通过内部 IPC 自动拉起 `via serve` 并同步密钥，两端握手完成。
-
-```
-via start
-  │
-  ├─ 生成随机密钥
-  ├─ 写入 ~/.via/registry.json（仅当前用户可读）
-  │
-  └─ 启动 Virtuoso
-        └─ Virtuoso 通过 IPC 自启动 via 守护进程 并同步密钥
-              └─ 两端密钥完成同步，桥接就绪
-
-via send --name ic --eval '...'
-  └─ 从 registry 读取密钥，随请求发送至 via serve
-        └─ via serve 校验匹配 → 执行并返回结果
-           via serve 校验失败 → 拒绝连接
-```
-
 ## 与 skillbridge 的对比
 
 [skillbridge](https://github.com/unihd-cag/skillbridge) 是一个成熟的开源项目，用于将 Cadence Virtuoso SKILL 桥接到 Python。它在 Virtuoso 中加载一个 SKILL 服务端脚本（`server.il`），并将 SKILL 函数封装为 Python 代理对象，使调用方可以直接在 Python 中写 `ws.db.open_cell_view(...)` 这样的代码。
@@ -375,7 +351,6 @@ via send --name ic --eval '...'
 | **客户端语言** | 仅 Python                               | 任意语言——Shell、Rust、Python、Go 等均可        |
 | **接口形式**  | Python 代理对象，封装 SKILL 函数                | 原始 SKILL 表达式字符串                       |
 | **传输方式**  | TCP 或 Unix socket                      | Unix socket                           |
-| **鉴权**    | 无内置鉴权                                  | 共享密钥（`--secret`）                      |
 | **部署方式**  | `pip install skillbridge` + Python 运行时 | 单个静态二进制，无运行时依赖                        |
 | **异步支持**  | 同步                                     | 同步（默认）或发后不管（`--async`）                |
 | **返回格式**  | Python 对象                              | 结构化 JSON（`data`、`ok`、`is_ref`、`code`） |
