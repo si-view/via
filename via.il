@@ -7,12 +7,10 @@
 ;;; Usage:
 ;;;   load("/path/to/via.il")
 ;;;   si_view_start("/usr/local/bin/via")
-;;;   si_view_start("/usr/local/bin/via" ?secret "your-secret")
 ;;;   ; → CIW: [si-view] started  pid=…  bridge=…  sock=/tmp/via-<user>.sock
 ;;;
 ;;;   ; Third-party calls:
 ;;;   ;   via send --sock /tmp/via-<user>.sock --expr 'hiGetPoint()'
-;;;   ;   via send --sock ... --secret your-secret --expr '...'
 ;;;
 ;;;   si_view_emit("progress" 75)
 ;;;   si_view_stop()
@@ -24,11 +22,7 @@
 ;;;
 ;;; Security
 ;;;   --cb-token  is generated fresh per session (local let-binding, never global).
-;;;   --secret    is optional; omit for development / trusted local use.
-;;;   Both are simple shared-secret tokens passed as CLI arguments.
-;;;
-;;; Note: --secret must not contain spaces or shell metacharacters.
-;;;       A 32-character hex string is ideal.
+;;;   It is passed through per-process temp files and deleted after startup.
 
 ;;; ── globals ───────────────────────────────────────────────────────────────────
 
@@ -44,12 +38,9 @@ _via_remote_tbl  = makeTable("_via_remote" nil) ; id → opaque object
 ;;; binary_path  — absolute path to the `via` binary
 ;;; ?sock        — Unix socket path clients connect to
 ;;;                [default: /tmp/via-<USER>.sock]
-;;; ?secret      — shared secret for `via send` authentication
-;;;                (omit or pass "" to disable authentication)
 procedure(si_view_start(binary_path
     @key
     (sock        sprintf(nil "/tmp/via-%s.sock" getShellEnvVar("USER")))
-    (secret_file "")
     (log_file    "via.log"))
 
   let((vpid cb_token cb_sock cb_token_file_serve cb_token_file_fwd
@@ -73,16 +64,10 @@ procedure(si_view_start(binary_path
     close(port)
 
     ;;; ── serve process ─────────────────────────────────────────────────────────
-    ;;; --secret-file and --cb-token-file keep sensitive values out of ps aux.
-    if(secret_file != "" then
-      serve_cmd = sprintf(nil
-        "%s serve --sock %s --cb-sock %s --cb-token-file %s --secret-file %s --log-file %s"
-        binary_path sock cb_sock cb_token_file_serve secret_file log_file)
-    else
-      serve_cmd = sprintf(nil
-        "%s serve --sock %s --cb-sock %s --cb-token-file %s --log-file %s"
-        binary_path sock cb_sock cb_token_file_serve log_file)
-    )
+    ;;; --cb-token-file keeps the callback token out of ps aux.
+    serve_cmd = sprintf(nil
+      "%s serve --sock %s --cb-sock %s --cb-token-file %s --log-file %s"
+      binary_path sock cb_sock cb_token_file_serve log_file)
     serve_pid = ipcBeginProcess(serve_cmd "" 'si_view_on_data "" t)
     if(!serve_pid then
       error("[si-view] failed to start serve: %s" binary_path)

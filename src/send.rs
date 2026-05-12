@@ -14,8 +14,8 @@ use crate::proto::{EvalRequest, EvalResponse};
 ///   - (default) block until the result arrives, then print JSON to stdout.
 ///   - (--async)  fire-and-forget; exit immediately after sending.
 ///
-/// When `--name` is given the socket path and secret are resolved from the
-/// managed instance registry; `--sock` and `--secret` are ignored.
+/// When `--name` is given the socket path is resolved from the managed
+/// instance registry; `--sock` is ignored.
 ///
 /// Output format (stdout, success):
 ///   {"id":"…","ok":true,"type":"<skill-type>","value":…}
@@ -23,14 +23,20 @@ use crate::proto::{EvalRequest, EvalResponse};
 /// Exit code 0  → ok:true
 /// Exit code 1  → ok:false or transport error (message to stderr)
 pub async fn run(args: SendArgs) -> Result<()> {
-    let (sock, secret) = resolve_target(&args)?;
+    let sock = resolve_target(&args)?;
     let expression = build_expression(&args)?;
 
     if args.dry_run {
         println!("[dry-run] target  : {sock}");
-        println!("[dry-run] auth    : {}", if secret.is_empty() { "(none)" } else { "(secret set)" });
         println!("[dry-run] expr    : {expression}");
-        println!("[dry-run] mode    : {}", if args.no_wait { "fire-and-forget" } else { "sync" });
+        println!(
+            "[dry-run] mode    : {}",
+            if args.no_wait {
+                "fire-and-forget"
+            } else {
+                "sync"
+            }
+        );
         return Ok(());
     }
 
@@ -45,7 +51,6 @@ pub async fn run(args: SendArgs) -> Result<()> {
     let id = Uuid::new_v4().to_string();
     let req = EvalRequest {
         id: id.clone(),
-        secret,
         expression,
         no_reply: args.no_wait,
     };
@@ -61,8 +66,8 @@ pub async fn run(args: SendArgs) -> Result<()> {
 
     match reader.next().await {
         Some(Ok(frame)) => {
-            let resp: EvalResponse = serde_json::from_slice(&frame)
-                .map_err(|e| anyhow!("decode response: {e}"))?;
+            let resp: EvalResponse =
+                serde_json::from_slice(&frame).map_err(|e| anyhow!("decode response: {e}"))?;
             println!("{}", serde_json::to_string_pretty(&resp)?);
             if resp.ok {
                 Ok(())
@@ -76,21 +81,17 @@ pub async fn run(args: SendArgs) -> Result<()> {
     }
 }
 
-/// Resolve (sock_path, secret) from either `--name` (registry lookup) or the
-/// explicit `--sock` / `--secret` flags.
-fn resolve_target(args: &SendArgs) -> Result<(String, String)> {
+/// Resolve sock_path from either `--name` (registry lookup) or explicit
+/// `--sock`.
+fn resolve_target(args: &SendArgs) -> Result<String> {
     if let Some(name) = &args.name {
         let registry = Registry::load()?;
-        let inst = registry
-            .instances
-            .get(name)
-            .ok_or_else(|| anyhow!("no managed instance named '{name}'; run `via list` to check"))?;
-        Ok((
-            inst.sock.to_string_lossy().into_owned(),
-            inst.secret.clone(),
-        ))
+        let inst = registry.instances.get(name).ok_or_else(|| {
+            anyhow!("no managed instance named '{name}'; run `via list` to check")
+        })?;
+        Ok(inst.sock.to_string_lossy().into_owned())
     } else {
-        Ok((args.sock.clone(), args.secret.clone()))
+        Ok(args.sock.clone())
     }
 }
 

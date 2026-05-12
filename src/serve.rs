@@ -21,7 +21,6 @@ use anyhow::{Context, Result};
 use bytes::Bytes;
 use futures_util::{SinkExt, StreamExt};
 use std::collections::VecDeque;
-use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::unix::OwnedWriteHalf;
 use tokio::net::{UnixListener, UnixStream};
@@ -52,7 +51,6 @@ pub async fn run(args: ServeArgs) -> Result<()> {
     // through the router (SKILL expressions only).
     let _guard = crate::log::init_file(&args.log_file)?;
 
-    let secret = Arc::new(resolve_secret(&args)?);
     let cb_token = resolve_cb_token(&args)?;
 
     // ── channels ──────────────────────────────────────────────────────────────
@@ -67,8 +65,8 @@ pub async fn run(args: ServeArgs) -> Result<()> {
 
     // ── client socket (for `via send`) ────────────────────────────────────────
     remove_if_exists(&args.sock)?;
-    let listener = UnixListener::bind(&args.sock)
-        .with_context(|| format!("bind sock {}", args.sock))?;
+    let listener =
+        UnixListener::bind(&args.sock).with_context(|| format!("bind sock {}", args.sock))?;
     info!("[si-view] client socket: {}", args.sock);
 
     // ── background tasks ──────────────────────────────────────────────────────
@@ -97,7 +95,7 @@ pub async fn run(args: ServeArgs) -> Result<()> {
     loop {
         match listener.accept().await {
             Ok((stream, _)) => {
-                let h = tokio::spawn(handle_client(stream, req_tx.clone(), secret.clone()));
+                let h = tokio::spawn(handle_client(stream, req_tx.clone()));
                 tokio::spawn(async move {
                     if let Err(e) = h.await {
                         error!("[si-view] client handler panicked: {e}");
@@ -131,9 +129,7 @@ async fn router_task(
         if in_flight.is_none() {
             if let Some(req) = queue.pop_front() {
                 let line = format!("{}\n", req.expression);
-                if out.write_all(line.as_bytes()).await.is_err()
-                    || out.flush().await.is_err()
-                {
+                if out.write_all(line.as_bytes()).await.is_err() || out.flush().await.is_err() {
                     error!("[si-view] stdout write failed");
                     break;
                 }
@@ -204,8 +200,8 @@ async fn cb_reader_task(
         };
 
         if let Some(json) = rest.strip_prefix("S:") {
-            let val = serde_json::from_str::<EvalResult>(json)
-                .map_err(|e| format!("JSON parse: {e}"));
+            let val =
+                serde_json::from_str::<EvalResult>(json).map_err(|e| format!("JSON parse: {e}"));
             let _ = cb_tx.send(val).await;
         } else if let Some(err) = rest.strip_prefix("F:") {
             let _ = cb_tx.send(Err(err.to_string())).await;
@@ -222,11 +218,7 @@ async fn cb_reader_task(
 
 // ── client handler ────────────────────────────────────────────────────────────
 
-async fn handle_client(
-    stream: UnixStream,
-    req_tx: mpsc::Sender<PendingReq>,
-    secret: Arc<String>,
-) {
+async fn handle_client(stream: UnixStream, req_tx: mpsc::Sender<PendingReq>) {
     let (rd, wr) = stream.into_split();
     let mut reader = FramedRead::new(rd, codec::new());
     let mut writer = FramedWrite::new(wr, codec::new());
@@ -247,13 +239,6 @@ async fn handle_client(
                 break;
             }
         };
-
-        // ── authentication ────────────────────────────────────────────────────
-        if !secret.is_empty() && req.secret != *secret {
-            warn!("[si-view] rejected id={} (bad secret)", req.id);
-            reply(&mut writer, EvalResponse::failure(req.id, "authentication failed".into())).await;
-            break;
-        }
 
         // ── dispatch to router ────────────────────────────────────────────────
         let (reply_tx, reply_rx) = if req.no_reply {
@@ -281,7 +266,7 @@ async fn handle_client(
         if let Some(rx) = reply_rx {
             let resp = match rx.await {
                 Ok(Ok(result)) => EvalResponse::success(id, result),
-                Ok(Err(err))   => EvalResponse::failure(id, err),
+                Ok(Err(err)) => EvalResponse::failure(id, err),
                 Err(_) => {
                     error!("[si-view] reply channel dropped");
                     break;
@@ -311,17 +296,6 @@ fn remove_if_exists(path: &str) -> Result<()> {
         std::fs::remove_file(p).with_context(|| format!("remove {path}"))?;
     }
     Ok(())
-}
-
-/// Resolve the shared secret from either `--secret-file` (preferred) or
-/// `--secret` (fallback).  When a file is used it is deleted immediately
-/// after being read so the secret does not linger on disk.
-fn resolve_secret(args: &crate::cli::ServeArgs) -> Result<String> {
-    if let Some(path) = &args.secret_file {
-        crate::process::read_and_delete(path)
-    } else {
-        Ok(args.secret.clone())
-    }
 }
 
 fn resolve_cb_token(args: &crate::cli::ServeArgs) -> Result<String> {

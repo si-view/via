@@ -70,7 +70,10 @@ pub async fn run(args: KillArgs) -> Result<()> {
                 std::io::Error::last_os_error()
             );
         }
-        println!("force-killed '{}' (pid {}, SIGKILL)", inst.name, inst.virtuoso_pid);
+        println!(
+            "force-killed '{}' (pid {}, SIGKILL)",
+            inst.name, inst.virtuoso_pid
+        );
     } else {
         // ── Graceful path ─────────────────────────────────────────────────────
         // 1. Send SKILL `exit()` through the IPC bridge (fire-and-forget).
@@ -78,7 +81,7 @@ pub async fn run(args: KillArgs) -> Result<()> {
         //    The bridge socket disappears as part of that, so we do NOT wait
         //    for a response — just fire and move on.
         let sock = inst.sock.to_string_lossy().into_owned();
-        match graceful_exit(&sock, &inst.secret).await {
+        match graceful_exit(&sock).await {
             Ok(()) => {
                 println!(
                     "sent exit() to '{}' (pid {}), waiting for shutdown...",
@@ -135,19 +138,16 @@ fn cleanup_sock(sock: &std::path::Path) {
 }
 
 /// Connect to the bridge socket and send `exit()` as a fire-and-forget request.
-async fn graceful_exit(sock: &str, secret: &str) -> Result<()> {
+async fn graceful_exit(sock: &str) -> Result<()> {
     let stream = UnixStream::connect(sock).await?;
     let (_rd, wr) = stream.into_split();
     let mut writer = FramedWrite::new(wr, codec::new());
 
     let req = EvalRequest {
         id: Uuid::new_v4().to_string(),
-        secret: secret.to_owned(),
         expression: "exit()".to_owned(),
         no_reply: true,
     };
-    writer
-        .send(Bytes::from(serde_json::to_vec(&req)?))
-        .await?;
+    writer.send(Bytes::from(serde_json::to_vec(&req)?)).await?;
     Ok(())
 }

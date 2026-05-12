@@ -10,8 +10,6 @@ pub struct Instance {
     pub virtuoso_pid: u32,
     /// Unix socket path that `via serve` listens on.
     pub sock: PathBuf,
-    /// Shared secret for `via send` authentication.
-    pub secret: String,
     pub workspace: PathBuf,
     /// File where Virtuoso's stdout/stderr is redirected.
     pub virtuoso_log: PathBuf,
@@ -67,14 +65,13 @@ pub fn process_alive(pid: u32) -> bool {
 }
 
 /// Read the entire contents of `path`, delete the file, and return the value.
-/// Trailing newlines are stripped so callers get a clean token/secret string.
-/// Used for `--secret-file` and `--cb-token-file` to keep sensitive values
-/// out of the process argument list.
+/// Trailing newlines are stripped so callers get a clean token string.
+/// Used for `--cb-token-file` to keep the callback token out of the process
+/// argument list.
 pub fn read_and_delete(path: &std::path::Path) -> Result<String> {
-    let value = std::fs::read_to_string(path)
-        .with_context(|| format!("read {}", path.display()))?;
-    std::fs::remove_file(path)
-        .with_context(|| format!("delete {}", path.display()))?;
+    let value =
+        std::fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
+    std::fs::remove_file(path).with_context(|| format!("delete {}", path.display()))?;
     Ok(value.trim_end_matches('\n').to_owned())
 }
 
@@ -123,7 +120,20 @@ fn epoch_to_parts(secs: u64) -> (u64, u64, u64, u64, u64, u64) {
         rem -= dy;
         y += 1;
     }
-    let months = [31u64, if is_leap(y) { 29 } else { 28 }, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    let months = [
+        31u64,
+        if is_leap(y) { 29 } else { 28 },
+        31,
+        30,
+        31,
+        30,
+        31,
+        31,
+        30,
+        31,
+        30,
+        31,
+    ];
     let mut mo = 1u64;
     for &dm in &months {
         if rem < dm {

@@ -323,7 +323,7 @@ via start  --name <name> [--workspace <path>] [--virtuoso <bin>] [--nograph] [--
 via list   [--prune] [--dry-run]
 via kill   <name> [--force] [--dry-run]
 via send   --name <name> (--eval <expr> | --load <file>) [--async] [--dry-run]
-via send   --sock <path> [--secret <s>] (--eval <expr> | --load <file>) [--async]
+via send   --sock <path> (--eval <expr> | --load <file>) [--async]
 ```
 
 ### Integrating with external tools

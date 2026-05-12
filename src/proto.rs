@@ -6,8 +6,6 @@ use serde_json::Value;
 pub struct EvalRequest {
     /// Client-generated UUID — used to correlate the response.
     pub id: String,
-    /// Shared secret; must match server `--secret` (empty string = no auth).
-    pub secret: String,
     /// SKILL expression to evaluate inside Virtuoso.
     pub expression: String,
     /// If true the server evaluates the expression but sends no response.
@@ -47,7 +45,11 @@ pub struct EvalResponse {
 
 impl EvalResponse {
     pub fn success(id: String, result: EvalResult) -> Self {
-        Self { id, ok: true, result }
+        Self {
+            id,
+            ok: true,
+            result,
+        }
     }
     pub fn failure(id: String, reason: String) -> Self {
         Self {

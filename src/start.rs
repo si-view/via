@@ -7,8 +7,13 @@ use uuid::Uuid;
 use crate::cli::StartArgs;
 use crate::process::{now_string, process_alive, Instance, Registry};
 
-/// Compiled SKILL context — embedded at compile time, never touches disk as
+/// Debug builds use plain SKILL source for faster iteration.
+#[cfg(debug_assertions)]
+const VIA_IL: &str = include_str!("../via.il");
+
+/// Release builds use the compiled SKILL context, never touching disk as
 /// plain-text source.
+#[cfg(not(debug_assertions))]
 const VIA_CXT: &[u8] = include_bytes!("../via.cxt");
 
 pub fn run(args: StartArgs) -> Result<()> {
@@ -44,9 +49,13 @@ pub fn run(args: StartArgs) -> Result<()> {
     let via_dir = Registry::dir();
     let log_dir = via_dir.join("logs");
     let tmp_dir = via_dir.join("tmp");
-    let cxt_dir = tmp_dir.join("64bit");
     std::fs::create_dir_all(&log_dir).context("create ~/.via/logs")?;
-    std::fs::create_dir_all(&cxt_dir).context("create ~/.via/tmp/64bit")?;
+    std::fs::create_dir_all(&tmp_dir).context("create ~/.via/tmp")?;
+    #[cfg(not(debug_assertions))]
+    {
+        let cxt_dir = tmp_dir.join("64bit");
+        std::fs::create_dir_all(&cxt_dir).context("create ~/.via/tmp/64bit")?;
+    }
 
     let sock = PathBuf::from(format!("/tmp/via-{user}-{}.sock", args.name));
     let virtuoso_log = log_dir.join(format!("{}-virtuoso.log", args.name));
@@ -55,18 +64,15 @@ pub fn run(args: StartArgs) -> Result<()> {
     // ── 4. Locate the via binary ──────────────────────────────────────────────
     let binary_path = std::env::current_exe().context("locate via binary")?;
 
-    // ── 5. Generate shared secret and per-start random file names ─────────────
-    // Two UUID v4s without hyphens → 64-char hex string.
-    let secret = format!("{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple());
+    // ── 5. Generate per-start random file names ──────────────────────────────
     // Random hex stems — different on every `via start` invocation.
-    let cxt_stem = Uuid::new_v4().simple().to_string();
+    let skill_stem = Uuid::new_v4().simple().to_string();
     let il_stem = Uuid::new_v4().simple().to_string();
 
-    let cxt_file = cxt_dir.join(&cxt_stem); // no extension — Cadence convention
+    let skill_file = skill_file_path(&tmp_dir, &skill_stem);
     let il_file = tmp_dir.join(format!("{il_stem}.il"));
-    let secret_file = tmp_dir.join(format!("{il_stem}.secret"));
 
-    // ── 6. Write compiled context, secret file, and bootstrap IL ─────────────
+    // ── 6. Write compiled context and bootstrap IL ───────────────────────────
     if args.dry_run {
         println!("[dry-run] instance name : {}", args.name);
         println!("[dry-run] workspace     : {}", workspace.display());
@@ -82,21 +88,9 @@ pub fn run(args: StartArgs) -> Result<()> {
         return Ok(());
     }
 
-    std::fs::write(&cxt_file, VIA_CXT)
-        .with_context(|| format!("write context file {}", cxt_file.display()))?;
+    write_skill_file(&skill_file)?;
 
-    // Write secret to its own file; via serve reads and deletes it on startup.
-    std::fs::write(&secret_file, &secret)
-        .with_context(|| format!("write secret file {}", secret_file.display()))?;
-
-    let il_content = build_il(
-        &cxt_file,
-        &il_file,
-        &secret_file,
-        &binary_path,
-        &sock,
-        &via_log,
-    );
+    let il_content = build_il(&skill_file, &il_file, &binary_path, &sock, &via_log);
     std::fs::write(&il_file, &il_content)
         .with_context(|| format!("write IL bootstrap {}", il_file.display()))?;
 
@@ -131,7 +125,6 @@ pub fn run(args: StartArgs) -> Result<()> {
             name: args.name.clone(),
             virtuoso_pid: pid,
             sock: sock.clone(),
-            secret,
             workspace,
             virtuoso_log,
             via_log,
@@ -182,32 +175,67 @@ fn escape_il(s: &str) -> String {
 /// Build the self-deleting IL bootstrap file.
 ///
 /// Execution order inside Virtuoso:
-///   1. `loadContext` — loads compiled SKILL definitions from the `.cxt` binary.
+///   1. Load the embedded SKILL bridge:
+///      - debug builds: `load` reads the generated plain `.il` file.
+///      - release builds: `loadContext` reads the generated `.cxt` binary.
 ///   2. `si_view_start` — launches `via serve` + `via forward`.
-///   3. `deleteFile` × 2 — removes the context binary and this file from disk.
+///   3. `deleteFile` × 2 — removes the bridge file and this bootstrap file.
 fn build_il(
-    cxt_file: &PathBuf,
+    skill_file: &PathBuf,
     il_file: &PathBuf,
-    secret_file: &PathBuf,
     binary: &PathBuf,
     sock: &PathBuf,
     via_log: &PathBuf,
 ) -> String {
+    let load_expr = build_load_expr(skill_file);
     format!(
-        r#"loadContext("{cxt}")
+        r#"{load_expr}
 si_view_start("{binary}"
   ?sock        "{sock}"
-  ?secret_file "{secret_file}"
   ?log_file    "{via_log}"
 )
-deleteFile("{cxt}")
+deleteFile("{skill_file}")
 deleteFile("{il}")
 "#,
-        cxt = escape_il(&cxt_file.to_string_lossy()),
+        load_expr = load_expr,
         binary = escape_il(&binary.to_string_lossy()),
         sock = escape_il(&sock.to_string_lossy()),
-        secret_file = escape_il(&secret_file.to_string_lossy()),
         via_log = escape_il(&via_log.to_string_lossy()),
+        skill_file = escape_il(&skill_file.to_string_lossy()),
         il = escape_il(&il_file.to_string_lossy()),
+    )
+}
+
+#[cfg(debug_assertions)]
+fn skill_file_path(tmp_dir: &std::path::Path, stem: &str) -> PathBuf {
+    tmp_dir.join(format!("{stem}.il"))
+}
+
+#[cfg(not(debug_assertions))]
+fn skill_file_path(tmp_dir: &std::path::Path, stem: &str) -> PathBuf {
+    // No extension — Cadence convention for compiled contexts.
+    tmp_dir.join("64bit").join(stem)
+}
+
+#[cfg(debug_assertions)]
+fn write_skill_file(path: &std::path::Path) -> Result<()> {
+    std::fs::write(path, VIA_IL).with_context(|| format!("write SKILL file {}", path.display()))
+}
+
+#[cfg(not(debug_assertions))]
+fn write_skill_file(path: &std::path::Path) -> Result<()> {
+    std::fs::write(path, VIA_CXT).with_context(|| format!("write context file {}", path.display()))
+}
+
+#[cfg(debug_assertions)]
+fn build_load_expr(skill_file: &std::path::Path) -> String {
+    format!("load(\"{}\")", escape_il(&skill_file.to_string_lossy()))
+}
+
+#[cfg(not(debug_assertions))]
+fn build_load_expr(skill_file: &std::path::Path) -> String {
+    format!(
+        "loadContext(\"{}\")",
+        escape_il(&skill_file.to_string_lossy())
     )
 }

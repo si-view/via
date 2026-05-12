@@ -46,15 +46,6 @@ pub struct ServeArgs {
     #[arg(long, conflicts_with = "cb_token")]
     pub cb_token_file: Option<PathBuf>,
 
-    /// Shared secret for client authentication (omit to disable auth)
-    #[arg(long, default_value = "")]
-    pub secret: String,
-
-    /// Read the shared secret from a file then delete it (preferred over
-    /// --secret to avoid exposing the value in the process list)
-    #[arg(long, conflicts_with = "secret")]
-    pub secret_file: Option<PathBuf>,
-
     /// Log file path (stdout/stderr must stay silent — Virtuoso captures them)
     #[arg(long, default_value = "via.log")]
     pub log_file: PathBuf,
@@ -86,17 +77,13 @@ pub struct ForwardArgs {
         .args(["eval", "load"])
 ))]
 pub struct SendArgs {
-    /// Instance name (looks up socket and secret from the managed registry)
+    /// Instance name (looks up socket from the managed registry)
     #[arg(long)]
     pub name: Option<String>,
 
     /// Target bridge server socket path (ignored when --name is given)
     #[arg(long, default_value_t = default_sock())]
     pub sock: String,
-
-    /// Shared secret for authentication (ignored when --name is given)
-    #[arg(long, default_value = "")]
-    pub secret: String,
 
     /// SKILL expression to evaluate
     #[arg(long)]
