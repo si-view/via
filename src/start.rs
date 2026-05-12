@@ -8,12 +8,12 @@ use crate::cli::StartArgs;
 use crate::process::{now_string, process_alive, Instance, Registry};
 
 /// Debug builds use plain SKILL source for faster iteration.
-#[cfg(debug_assertions)]
+#[cfg(any(debug_assertions, feature = "dev-il"))]
 const VIA_IL: &str = include_str!("../via.il");
 
 /// Release builds use the compiled SKILL context, never touching disk as
 /// plain-text source.
-#[cfg(not(debug_assertions))]
+#[cfg(all(not(debug_assertions), not(feature = "dev-il")))]
 const VIA_CXT: &[u8] = include_bytes!("../via.cxt");
 
 pub fn run(args: StartArgs) -> Result<()> {
@@ -51,7 +51,7 @@ pub fn run(args: StartArgs) -> Result<()> {
     let tmp_dir = via_dir.join("tmp");
     std::fs::create_dir_all(&log_dir).context("create ~/.via/logs")?;
     std::fs::create_dir_all(&tmp_dir).context("create ~/.via/tmp")?;
-    #[cfg(not(debug_assertions))]
+    #[cfg(all(not(debug_assertions), not(feature = "dev-il")))]
     {
         let cxt_dir = tmp_dir.join("64bit");
         std::fs::create_dir_all(&cxt_dir).context("create ~/.via/tmp/64bit")?;
@@ -176,8 +176,8 @@ fn escape_il(s: &str) -> String {
 ///
 /// Execution order inside Virtuoso:
 ///   1. Load the embedded SKILL bridge:
-///      - debug builds: `load` reads the generated plain `.il` file.
-///      - release builds: `loadContext` reads the generated `.cxt` binary.
+///      - debug/dev-il builds: `load` reads the generated plain `.il` file.
+///      - default release builds: `loadContext` reads the generated `.cxt` binary.
 ///   2. `si_view_start` — launches `via serve` + `via forward`.
 ///   3. `deleteFile` × 2 — removes the bridge file and this bootstrap file.
 fn build_il(
@@ -206,33 +206,33 @@ deleteFile("{il}")
     )
 }
 
-#[cfg(debug_assertions)]
+#[cfg(any(debug_assertions, feature = "dev-il"))]
 fn skill_file_path(tmp_dir: &std::path::Path, stem: &str) -> PathBuf {
     tmp_dir.join(format!("{stem}.il"))
 }
 
-#[cfg(not(debug_assertions))]
+#[cfg(all(not(debug_assertions), not(feature = "dev-il")))]
 fn skill_file_path(tmp_dir: &std::path::Path, stem: &str) -> PathBuf {
     // No extension — Cadence convention for compiled contexts.
     tmp_dir.join("64bit").join(stem)
 }
 
-#[cfg(debug_assertions)]
+#[cfg(any(debug_assertions, feature = "dev-il"))]
 fn write_skill_file(path: &std::path::Path) -> Result<()> {
     std::fs::write(path, VIA_IL).with_context(|| format!("write SKILL file {}", path.display()))
 }
 
-#[cfg(not(debug_assertions))]
+#[cfg(all(not(debug_assertions), not(feature = "dev-il")))]
 fn write_skill_file(path: &std::path::Path) -> Result<()> {
     std::fs::write(path, VIA_CXT).with_context(|| format!("write context file {}", path.display()))
 }
 
-#[cfg(debug_assertions)]
+#[cfg(any(debug_assertions, feature = "dev-il"))]
 fn build_load_expr(skill_file: &std::path::Path) -> String {
     format!("load(\"{}\")", escape_il(&skill_file.to_string_lossy()))
 }
 
-#[cfg(not(debug_assertions))]
+#[cfg(all(not(debug_assertions), not(feature = "dev-il")))]
 fn build_load_expr(skill_file: &std::path::Path) -> String {
     format!(
         "loadContext(\"{}\")",

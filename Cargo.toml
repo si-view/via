@@ -28,3 +28,8 @@ tracing-appender = "0.2"
 anyhow = "1"
 futures-util = { version = "0.3", features = ["sink"] }
 libc = "0.2"
+
+[features]
+# Build the release binary with plain via.il embedded instead of via.cxt.
+# Useful when validating SKILL changes before a refreshed via.cxt is available.
+dev-il = []

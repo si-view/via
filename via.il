@@ -137,7 +137,7 @@ procedure(via_remote(id)
 ;;; Both evaluation and serialisation are wrapped in errset so that any SKILL
 ;;; error produces a well-formed F: response rather than a silent failure.
 procedure(si_view_on_data(pid data)
-  let((pos line result json_result errMsg reply)
+  let((pos line result json_result captured_error errMsg reply)
     _via_ipc_buf = strcat(_via_ipc_buf data)
     pos = _via_find_nl(_via_ipc_buf)
     while(pos
@@ -148,21 +148,22 @@ procedure(si_view_on_data(pid data)
                        "")
 
       ;;; Step 1 — evaluate
-      result = errset(evalstring(line) t)
-      if(result then
+      errset(result = evalstring(line))
+      captured_error = errset.errset
+      errset.errset = nil
+      if(!captured_error then
         ;;; Step 2 — serialise (may fail for opaque objects; errset catches that)
-        json_result = errset(_via_to_typed_json(car(result)) t)
-        if(json_result then
-          reply = strcat("S:" car(json_result) "\n")
+        errset(json_result = _via_to_typed_json(result))
+        captured_error = errset.errset
+        errset.errset = nil
+        if(!captured_error then
+          reply = strcat("S:" json_result "\n")
         else
-          reply = strcat("F:serialization error\n")
+          errMsg = _via_extract_error_message(captured_error)
+          reply = strcat("F:" _via_esc(errMsg) "\n")
         )
       else
-        errMsg = if(boundp('errText) && listp(errText)
-                      && errText && stringp(car(errText)) then
-                   car(errText)
-                 else
-                   "SKILL evaluation error")
+        errMsg = _via_extract_error_message(captured_error)
         reply = strcat("F:" _via_esc(errMsg) "\n")
       )
       ipcWriteProcess(_via_bridge_pid reply)
@@ -172,6 +173,68 @@ procedure(si_view_on_data(pid data)
 )
 
 ;;; ── internal helpers ──────────────────────────────────────────────────────────
+
+procedure(_via_error_message_string(text)
+  if(
+    stringp(text)
+    && strlen(text) >= 7
+    && substring(text 1 7) == "*Error*"
+  then
+    text
+  else
+    nil
+  )
+)
+
+procedure(_via_append_error_detail(message detail)
+  if(
+    message
+    && detail
+    && !stringp(detail)
+  then
+    _via_append_error_detail(message lsprintf("%L" detail))
+  else if(
+    message
+    && stringp(detail)
+    && !pcreMatchp(" - " message)
+    && pcreMatchp("unbound variable$" message)
+  then
+    lsprintf("%s - %s" message detail)
+  else
+    message
+  ))
+)
+
+procedure(_via_extract_error_message(error_value)
+  let((message)
+    message = _via_find_error_message(error_value)
+    message || lsprintf("%L" error_value)
+  )
+)
+
+procedure(_via_find_error_message(error_value)
+  let((nested_message head_message tail_item)
+    if(stringp(error_value) then
+      _via_error_message_string(error_value)
+    else if(listp(error_value) then
+      head_message = _via_error_message_string(car(error_value))
+      if(head_message && cdr(error_value) && cddr(error_value) == nil then
+        tail_item = cadr(error_value)
+        _via_append_error_detail(head_message tail_item)
+      else
+        nested_message = nil
+        foreach(item error_value
+          if(!nested_message then
+            nested_message = _via_find_error_message(item)
+          )
+        )
+        nested_message
+      )
+    else
+      nil
+    ))
+  )
+)
 
 ;;; Generate a 32-character random hex token (local use only).
 procedure(_via_gen_token()
