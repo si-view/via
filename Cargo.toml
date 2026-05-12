@@ -1,7 +1,7 @@
 [package]
 # crates.io already has a `via` crate (unrelated web framework); this package is `virtuoso-via`. Binary name stays `via`.
 name = "virtuoso-via"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2021"
 description = "Virtuoso IPC bridge — SKILL over Unix sockets, JSON in/out"
 license = "MIT"
