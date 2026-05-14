@@ -17,8 +17,8 @@ const VIA_IL: &str = include_str!("../via.il");
 const VIA_CXT: &[u8] = include_bytes!("../via.cxt");
 
 pub fn run(args: StartArgs) -> Result<()> {
-    // ── 1. Require DISPLAY ────────────────────────────────────────────────────
-    if std::env::var("DISPLAY").is_err() {
+    // ── 1. Require DISPLAY for GUI launches ──────────────────────────────────
+    if !args.nograph && std::env::var("DISPLAY").is_err() {
         bail!("DISPLAY environment variable is not set; Virtuoso requires a display");
     }
 
